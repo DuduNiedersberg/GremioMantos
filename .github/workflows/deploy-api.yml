@@ -42,7 +42,7 @@ jobs:
         mkdir -p ../output
         
         # Copiar arquivos compilados
-        cp -r dist/* ../output/
+        cp -r dist/. ../output/
         
         # Copiar configurações
         cp host.json ../output/
