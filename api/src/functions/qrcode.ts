@@ -43,7 +43,7 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext): 
       marca: item.marca,
       modelo: item.modelo,
       jogador: item.jogador,
-      url: `https://dudniedersberg.github.io/GremioMantos/itens/${item.id}`,
+      url: `https://duduniedersberg.github.io/GremioMantos/itens/${item.id}`,
     };
 
     // Generate QR code as data URL

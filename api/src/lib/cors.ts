@@ -26,6 +26,8 @@ export function addCorsHeaders(
   response: HttpResponseInit,
   origin?: string
 ): HttpResponseInit {
+  // Only add CORS headers if origin is valid and in allowed list
+  // Otherwise, default to first allowed origin (GitHub Pages) for server-to-server calls
   const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) 
     ? origin 
     : ALLOWED_ORIGINS[0];
@@ -44,6 +46,8 @@ export function addCorsHeaders(
  * Manipula requisições OPTIONS (preflight)
  */
 export function handlePreflight(origin?: string): HttpResponseInit {
+  // Only add CORS headers if origin is valid and in allowed list
+  // Otherwise, default to first allowed origin (GitHub Pages) for server-to-server calls
   const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) 
     ? origin 
     : ALLOWED_ORIGINS[0];
