@@ -27,7 +27,7 @@ async function historicoHandler(request: HttpRequest, context: InvocationContext
 
     // POST /api/itens/{itemId}/historico-precos - Add price history entry
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await request.json() as any;
       const validated = historicoPrecoSchema.parse({
         ...body,
         item_id: parseInt(itemId),

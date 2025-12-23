@@ -5,12 +5,13 @@ const config: sql.config = {
   database: process.env.SQL_DATABASE || 'bolicho_gremio_camisetas',
   authentication: {
     type: 'azure-active-directory-default',
+    options: {}
   },
   options: {
     encrypt: true,
     trustServerCertificate: false,
     enableArithAbort: true,
-    connectionTimeout: 30000,
+    connectTimeout: 30000,
     requestTimeout: 30000,
   },
   pool: {

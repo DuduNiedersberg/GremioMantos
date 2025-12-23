@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { addCorsHeaders } from '../middleware/cors';
 import { getConnection } from '../lib/database';
 
-async function healthHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function healthHandler(_request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   context.log('Health check requested');
 
   try {

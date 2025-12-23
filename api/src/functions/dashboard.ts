@@ -3,7 +3,7 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { DashboardMetrics } from '../lib/types';
 
-async function dashboardHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function dashboardHandler(_request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   try {
     // Get total items by situation
     const itensQuery = `

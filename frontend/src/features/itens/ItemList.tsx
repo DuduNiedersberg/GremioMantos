@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getItens } from '../../lib/api';
 import { Item } from '../../types';
-import { formatCurrency, formatDate } from '../../shared/utils/formatters';
+import { formatCurrency } from '../../shared/utils/formatters';
 import { Plus, Search } from 'lucide-react';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';

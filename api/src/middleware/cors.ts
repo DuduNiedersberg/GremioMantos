@@ -1,6 +1,6 @@
 import { HttpRequest, InvocationContext } from '@azure/functions';
 
-export function corsMiddleware(req: HttpRequest, context: InvocationContext) {
+export function corsMiddleware(req: HttpRequest, _context: InvocationContext) {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',

@@ -1,6 +1,8 @@
-import { HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
+import { HttpResponseInit, InvocationContext } from '@azure/functions';
 import { ZodError } from 'zod';
 import { addCorsHeaders } from './cors';
+
+export { addCorsHeaders };
 
 export class ApiError extends Error {
   constructor(
