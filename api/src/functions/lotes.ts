@@ -1,10 +1,18 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { loteSchema } from '../lib/utils';
 import { Lote } from '../lib/types';
 
 async function lotesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const id = request.params.id;
@@ -33,7 +41,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
         perPage,
         total,
         totalPages: Math.ceil(total / perPage),
-      });
+      }, 200, origin);
     }
 
     // GET /api/lotes/{id} - Get single batch with items
@@ -42,7 +50,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       const loteResult = await executeQuery<Lote>(loteQuery, { id });
 
       if (loteResult.recordset.length === 0) {
-        return successResponse({ error: 'Lote não encontrado' }, 404);
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
       }
 
       const itensQuery = 'SELECT * FROM itens WHERE lote_id = @id';
@@ -51,7 +59,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       return successResponse({
         ...loteResult.recordset[0],
         itens: itensResult.recordset,
-      });
+      }, 200, origin);
     }
 
     // POST /api/lotes - Create new batch
@@ -74,7 +82,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
         data_compra: validated.data_compra || new Date().toISOString().split('T')[0],
       });
 
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
     // PUT /api/lotes/{id} - Update batch
@@ -96,10 +104,10 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       const result = await executeQuery<Lote>(query, { ...validated, id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Lote não encontrado' }, 404);
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // DELETE /api/lotes/{id} - Delete batch
@@ -110,12 +118,12 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       const query = 'DELETE FROM lotes WHERE id = @id';
       await executeQuery(query, { id });
       
-      return successResponse({ message: 'Lote excluído com sucesso' });
+      return successResponse({ message: 'Lote excluído com sucesso' }, 200, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

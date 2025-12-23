@@ -1,10 +1,18 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { itemSchema } from '../lib/utils';
 import { Item } from '../lib/types';
 
 async function itensHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const id = request.params.id;
@@ -50,7 +58,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         perPage,
         total,
         totalPages: Math.ceil(total / perPage),
-      });
+      }, 200, origin);
     }
 
     // GET /api/itens/{id} - Get single item
@@ -59,10 +67,10 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       const result = await executeQuery<Item>(query, { id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Item não encontrado' }, 404);
+        return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // POST /api/itens - Create new item
@@ -83,7 +91,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       `;
 
       const result = await executeQuery<Item>(query, validated);
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
     // PUT /api/itens/{id} - Update item
@@ -105,22 +113,22 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       const result = await executeQuery<Item>(query, { ...validated, id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Item não encontrado' }, 404);
+        return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // DELETE /api/itens/{id} - Delete item
     if (method === 'DELETE' && id) {
       const query = 'DELETE FROM itens WHERE id = @id';
       await executeQuery(query, { id });
-      return successResponse({ message: 'Item excluído com sucesso' });
+      return successResponse({ message: 'Item excluído com sucesso' }, 200, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

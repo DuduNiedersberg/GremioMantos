@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { Cliente } from '../lib/types';
 import { z } from 'zod';
 
@@ -14,6 +15,13 @@ const clienteSchema = z.object({
 });
 
 async function clientesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const id = request.params.id;
@@ -52,7 +60,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
         perPage,
         total,
         totalPages: Math.ceil(total / perPage),
-      });
+      }, 200, origin);
     }
 
     // GET /api/clientes/{id} - Get single customer with purchase history
@@ -61,7 +69,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       const clienteResult = await executeQuery<Cliente>(clienteQuery, { id });
 
       if (clienteResult.recordset.length === 0) {
-        return successResponse({ error: 'Cliente não encontrado' }, 404);
+        return successResponse({ error: 'Cliente não encontrado' }, 404, origin);
       }
 
       const vendasQuery = `
@@ -76,7 +84,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       return successResponse({
         ...clienteResult.recordset[0],
         vendas: vendasResult.recordset,
-      });
+      }, 200, origin);
     }
 
     // POST /api/clientes - Create new customer
@@ -95,7 +103,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       `;
 
       const result = await executeQuery<Cliente>(query, validated);
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
     // PUT /api/clientes/{id} - Update customer
@@ -117,22 +125,22 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       const result = await executeQuery<Cliente>(query, { ...validated, id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Cliente não encontrado' }, 404);
+        return successResponse({ error: 'Cliente não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // DELETE /api/clientes/{id} - Delete customer
     if (method === 'DELETE' && id) {
       const query = 'DELETE FROM clientes WHERE id = @id';
       await executeQuery(query, { id });
-      return successResponse({ message: 'Cliente excluído com sucesso' });
+      return successResponse({ message: 'Cliente excluído com sucesso' }, 200, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

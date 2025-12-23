@@ -1,10 +1,18 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { wishlistSchema } from '../lib/utils';
 import { WishlistItem } from '../lib/types';
 
 async function wishlistHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const id = request.params.id;
@@ -56,7 +64,7 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
         perPage,
         total,
         totalPages: Math.ceil(total / perPage),
-      });
+      }, 200, origin);
     }
 
     // GET /api/wishlist/{id} - Get single wishlist item
@@ -65,10 +73,10 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
       const result = await executeQuery<WishlistItem>(query, { id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Item não encontrado na wishlist' }, 404);
+        return successResponse({ error: 'Item não encontrado na wishlist' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // POST /api/wishlist - Create new wishlist item
@@ -89,7 +97,7 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
       `;
 
       const result = await executeQuery<WishlistItem>(query, validated);
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
     // PUT /api/wishlist/{id} - Update wishlist item
@@ -111,22 +119,22 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
       const result = await executeQuery<WishlistItem>(query, { ...validated, id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Item não encontrado na wishlist' }, 404);
+        return successResponse({ error: 'Item não encontrado na wishlist' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // DELETE /api/wishlist/{id} - Delete wishlist item
     if (method === 'DELETE' && id) {
       const query = 'DELETE FROM wishlist WHERE id = @id';
       await executeQuery(query, { id });
-      return successResponse({ message: 'Item removido da wishlist' });
+      return successResponse({ message: 'Item removido da wishlist' }, 200, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

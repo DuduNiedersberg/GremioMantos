@@ -1,8 +1,16 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
-import { addCorsHeaders } from '../middleware/cors';
+import { addCorsHeaders } from '../lib/cors';
+import { handlePreflight } from '../lib/cors';
 import { getConnection } from '../lib/database';
 
-async function healthHandler(_request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function healthHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   context.log('Health check requested');
 
   try {
@@ -21,7 +29,7 @@ async function healthHandler(_request: HttpRequest, context: InvocationContext):
     return addCorsHeaders({
       status: 200,
       jsonBody: health,
-    });
+    }, origin);
   } catch (error) {
     context.error('Health check failed:', error);
     return addCorsHeaders({
@@ -31,7 +39,7 @@ async function healthHandler(_request: HttpRequest, context: InvocationContext):
         timestamp: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error',
       },
-    });
+    }, origin);
   }
 }
 

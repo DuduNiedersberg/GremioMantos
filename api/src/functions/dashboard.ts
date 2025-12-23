@@ -1,9 +1,17 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { DashboardMetrics } from '../lib/types';
 
-async function dashboardHandler(_request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function dashboardHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     // Get total items by situation
     const itensQuery = `
@@ -76,9 +84,9 @@ async function dashboardHandler(_request: HttpRequest, context: InvocationContex
       recent_items: recentResult.recordset,
       top_value_items: topValueResult.recordset,
       sales_by_month: salesByMonthResult.recordset,
-    });
+    }, 200, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

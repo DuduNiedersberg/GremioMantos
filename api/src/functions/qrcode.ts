@@ -1,9 +1,17 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, addCorsHeaders } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import * as QRCode from 'qrcode';
 
 async function qrcodeHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const itemId = request.params.itemId;
 
@@ -11,7 +19,7 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext): 
       return addCorsHeaders({
         status: 400,
         jsonBody: { error: 'Item ID é obrigatório' },
-      });
+      }, origin);
     }
 
     // Get item details
@@ -22,7 +30,7 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext): 
       return addCorsHeaders({
         status: 404,
         jsonBody: { error: 'Item não encontrado' },
-      });
+      }, origin);
     }
 
     const item = result.recordset[0];
@@ -57,9 +65,9 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext): 
           item: qrData,
         },
       },
-    });
+    }, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 
