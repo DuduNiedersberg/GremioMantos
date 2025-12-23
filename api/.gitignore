@@ -1,0 +1,9 @@
+node_modules
+dist
+*.js
+!jest.config.js
+*.js.map
+*.log
+local.settings.json
+.vscode
+.DS_Store
