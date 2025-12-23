@@ -1,6 +1,6 @@
 name: Deploy Azure Functions API
 
-on: 
+on:
   push:
     branches: [main]
     paths: 
