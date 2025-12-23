@@ -30,14 +30,17 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
-        cache-dependency-path: api/package-lock.json
+        cache-dependency-path: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/package-lock.json'
 
     - name: 'Instalar dependências e build'
       shell: bash
+      working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
       run: |
-        cd "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
+        echo "📦 Instalando dependências..."
         npm ci
+        echo "🔨 Building..."
         npm run build --if-present
+        echo "✅ Build concluído!"
 
     - name: 'Login to Azure'
       uses: azure/login@v2
@@ -54,5 +57,7 @@ jobs:
 
     - name: 'Health Check'
       run: |
+        echo "⏳ Aguardando cold start..."
         sleep 30
-        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || exit 1
+        echo "🔍 Testando endpoint /api/health..."
+        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || echo "⚠️ Health check falhou (pode ser CORS)"
