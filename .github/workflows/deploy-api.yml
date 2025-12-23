@@ -1,0 +1,58 @@
+name: Deploy Azure Functions API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+env:
+  AZURE_FUNCTIONAPP_NAME: gremiomantosapi
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'api'
+  NODE_VERSION: '22.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - name: 'Checkout código'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: api/package-lock.json
+
+    - name: 'Instalar dependências e build'
+      shell: bash
+      run: |
+        cd "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
+        npm ci
+        npm run build --if-present
+
+    - name: 'Login to Azure'
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_114C5CBC7F014AC1968C3C3D78E69D3C }}
+        tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_DA37744F05FF4587B873FA8B2123DB77 }}
+        subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD06D50EEDBE45D8BB2F9056F0C2B463 }}
+
+    - name: 'Deploy para Azure Functions'
+      uses: Azure/functions-action@v1
+      with:
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+
+    - name: 'Health Check'
+      run: |
+        sleep 30
+        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || exit 1
