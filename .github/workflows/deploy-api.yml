@@ -8,47 +8,65 @@ on:
       - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
 
-env: 
-  AZURE_FUNCTIONAPP_NAME:  gremiomantosapi
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'api'
-  NODE_VERSION: '20.x'  # ✅ CORRIGIDO
+env:
+  AZURE_FUNCTIONAPP_NAME: gremiomantosapi
+  NODE_VERSION: '20.x'
 
 jobs:
   build-and-deploy:
-    runs-on:  ubuntu-latest
+    runs-on: ubuntu-latest
     environment: production
     
     steps:
     - name: 'Checkout código'
       uses: actions/checkout@v4
 
-    - name:  'Setup Node.js ${{ env.NODE_VERSION }}'
+    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
       uses: actions/setup-node@v4
-      with: 
+      with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        cache-dependency-path: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/package-lock.json'
 
-    - name: 'Instalar dependências e build'
-      shell: bash
-      working-directory: ${{ env. AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-      run:  |
+    - name: 'Build da aplicação'
+      working-directory: api
+      run: |
         echo "📦 Instalando dependências..."
         npm ci
-        echo "🔨 Building..."
-        npm run build --if-present
+        echo "🔨 Compilando TypeScript..."
+        npm run build
         echo "✅ Build concluído!"
+
+    - name: 'Preparar artefatos para deploy'
+      working-directory: api
+      run: |
+        echo "📁 Criando estrutura de deploy..."
+        mkdir -p ../output
+        
+        # Copiar arquivos compilados
+        cp -r dist/. ../output/
+        
+        # Copiar configurações
+        cp host.json ../output/
+        cp package.json ../output/
+        cp package-lock.json ../output/
+        
+        # Instalar dependências de produção
+        cd ../output
+        npm ci --omit=dev
+        
+        echo "✅ Artefatos prontos!"
 
     - name: 'Deploy para Azure Functions'
       uses: Azure/functions-action@v1
       with:
-        app-name: ${{ env. AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env. AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+        package: output
         publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        respect-funcignore: true
 
-    - name:  'Health Check'
+    - name: 'Aguardar inicialização'
+      run: sleep 45
+
+    - name: 'Health Check'
       run: |
-        echo "⏳ Aguardando cold start..."
-        sleep 30
         echo "🔍 Testando endpoint /api/health..."
-        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || echo "⚠️ Health check falhou (pode ser CORS)"
+        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || echo "⚠️ Health check falhou (verificar logs)"
