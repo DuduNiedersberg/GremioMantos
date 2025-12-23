@@ -1,10 +1,18 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { trocaSchema } from '../lib/utils';
 import { Troca } from '../lib/types';
 
 async function trocasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const id = request.params.id;
@@ -38,7 +46,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         perPage,
         total,
         totalPages: Math.ceil(total / perPage),
-      });
+      }, 200, origin);
     }
 
     // GET /api/trocas/{id} - Get single trade
@@ -55,10 +63,10 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       const result = await executeQuery(query, { id });
 
       if (result.recordset.length === 0) {
-        return successResponse({ error: 'Troca não encontrada' }, 404);
+        return successResponse({ error: 'Troca não encontrada' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0]);
+      return successResponse(result.recordset[0], 200, origin);
     }
 
     // POST /api/trocas - Create new trade
@@ -89,12 +97,12 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         data_troca: validated.data_troca || new Date().toISOString().split('T')[0],
       });
 
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 

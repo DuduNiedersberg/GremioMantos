@@ -1,6 +1,6 @@
 import { HttpResponseInit, InvocationContext } from '@azure/functions';
 import { ZodError } from 'zod';
-import { addCorsHeaders } from './cors';
+import { addCorsHeaders } from '../lib/cors';
 
 export { addCorsHeaders };
 
@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-export function handleError(error: unknown, context: InvocationContext): HttpResponseInit {
+export function handleError(error: unknown, context: InvocationContext, origin?: string): HttpResponseInit {
   context.error('Error occurred:', error);
 
   if (error instanceof ZodError) {
@@ -26,7 +26,7 @@ export function handleError(error: unknown, context: InvocationContext): HttpRes
         error: 'Validation error',
         details: error.errors,
       },
-    });
+    }, origin);
   }
 
   if (error instanceof ApiError) {
@@ -37,7 +37,7 @@ export function handleError(error: unknown, context: InvocationContext): HttpRes
         error: error.message,
         details: error.details,
       },
-    });
+    }, origin);
   }
 
   if (error instanceof Error) {
@@ -48,7 +48,7 @@ export function handleError(error: unknown, context: InvocationContext): HttpRes
         error: 'Internal server error',
         message: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
-    });
+    }, origin);
   }
 
   return addCorsHeaders({
@@ -57,15 +57,15 @@ export function handleError(error: unknown, context: InvocationContext): HttpRes
       success: false,
       error: 'Unknown error occurred',
     },
-  });
+  }, origin);
 }
 
-export function successResponse<T>(data: T, status: number = 200): HttpResponseInit {
+export function successResponse<T>(data: T, status: number = 200, origin?: string): HttpResponseInit {
   return addCorsHeaders({
     status,
     jsonBody: {
       success: true,
       data,
     },
-  });
+  }, origin);
 }

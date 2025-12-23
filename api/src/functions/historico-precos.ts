@@ -1,16 +1,24 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
+import { handlePreflight } from '../lib/cors';
 import { historicoPrecoSchema } from '../lib/utils';
 import { HistoricoPreco } from '../lib/types';
 
 async function historicoHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
   try {
     const method = request.method;
     const itemId = request.params.itemId;
 
     if (!itemId) {
-      return successResponse({ error: 'Item ID é obrigatório' }, 400);
+      return successResponse({ error: 'Item ID é obrigatório' }, 400, origin);
     }
 
     // GET /api/itens/{itemId}/historico-precos - Get price history for item
@@ -22,7 +30,7 @@ async function historicoHandler(request: HttpRequest, context: InvocationContext
       `;
 
       const result = await executeQuery<HistoricoPreco>(query, { itemId });
-      return successResponse(result.recordset);
+      return successResponse(result.recordset, 200, origin);
     }
 
     // POST /api/itens/{itemId}/historico-precos - Add price history entry
@@ -48,12 +56,12 @@ async function historicoHandler(request: HttpRequest, context: InvocationContext
         data_registro: validated.data_registro || new Date().toISOString().split('T')[0],
       });
 
-      return successResponse(result.recordset[0], 201);
+      return successResponse(result.recordset[0], 201, origin);
     }
 
-    return successResponse({ error: 'Método não permitido' }, 405);
+    return successResponse({ error: 'Método não permitido' }, 405, origin);
   } catch (error) {
-    return handleError(error, context);
+    return handleError(error, context, origin);
   }
 }
 
