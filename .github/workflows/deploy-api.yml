@@ -1,12 +1,12 @@
 name: Deploy Azure Functions API
 
-on: 
-  push:
+on:
+  push: 
     branches: [main]
-    paths: 
+    paths:
       - 'api/**'
-      - '.github/workflows/deploy-api.yml'
-  workflow_dispatch:
+      - '. github/workflows/deploy-api. yml'
+  workflow_dispatch: 
 
 env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
@@ -14,20 +14,20 @@ env:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on:  ubuntu-latest
     environment: production
     
     steps:
     - name: 'Checkout código'
-      uses:  actions/checkout@v4
+      uses: actions/checkout@v4
 
-    - name: 'Setup Node. js ${{ env.NODE_VERSION }}'
+    - name:  'Setup Node.js ${{ env.NODE_VERSION }}'
       uses: actions/setup-node@v4
-      with:
-        node-version:  ${{ env.NODE_VERSION }}
+      with: 
+        node-version: ${{ env.NODE_VERSION }}
 
     - name: 'Build da aplicação'
-      working-directory: api
+      working-directory:  api
       run: |
         echo "📦 Instalando dependências..."
         npm ci
@@ -37,12 +37,12 @@ jobs:
 
     - name: 'Preparar pacote ZIP'
       working-directory: api
-      run: |
+      run:  |
         echo "📁 Criando estrutura de deploy..."
         mkdir -p deploy
         
         # Copiar arquivos compilados
-        cp -r dist/. deploy/
+        cp -r dist/* deploy/
         
         # Copiar configurações
         cp host.json deploy/
@@ -54,32 +54,23 @@ jobs:
         npm ci --omit=dev
         
         # Criar ZIP
-        zip -r ../deploy.zip .
+        cd ..
+        zip -r deploy.zip deploy/
         
-        echo "✅ ZIP criado:  $(ls -lh ../deploy. zip)"
-
-    - name: 'Extrair credenciais do publish profile'
-      id: publish-profile
-      run: |
-        # Extrair username e password do XML
-        USERNAME=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -oP 'userName="\K[^"]+' | head -1)
-        PASSWORD=$(echo '${{ secrets. AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -oP 'userPWD="\K[^"]+' | head -1)
-        
-        echo "::add-mask:: $PASSWORD"
-        echo "username=$USERNAME" >> $GITHUB_OUTPUT
-        echo "password=$PASSWORD" >> $GITHUB_OUTPUT
+        echo "✅ ZIP criado:  $(ls -lh deploy.zip)"
 
     - name: 'Deploy via Kudu ZIP API'
       working-directory: api
-      run:  |
-        echo "🚀 Fazendo deploy via Kudu ZIP API..."
+      run: |
+        echo "🚀 Fazendo deploy via Kudu..."
         
         HTTP_CODE=$(curl -X POST \
-          -u "${{ steps.publish-profile.outputs.username }}:${{ steps.publish-profile.outputs. password }}" \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
           --data-binary @deploy.zip \
-          -H "Content-Type:  application/zip" \
+          -H "Content-Type: application/zip" \
           -w "%{http_code}" \
           -o response.txt \
+          --max-time 300 \
           "https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net/api/zipdeploy")
         
         echo "HTTP Status: $HTTP_CODE"
@@ -102,8 +93,8 @@ jobs:
         echo "🔍 Testando endpoint /api/health..."
         
         for i in {1..5}; do
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites. net/api/health)
-          echo "Tentativa $i:  HTTP $HTTP_CODE"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health)
+          echo "Tentativa $i: HTTP $HTTP_CODE"
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ Health check passou!"
@@ -114,4 +105,4 @@ jobs:
           sleep 10
         done
         
-        echo "⚠️ Health check não passou após 5 tentativas"
+        echo "⚠️ Health check não retornou 200 após 5 tentativas (verificar logs no Azure)"
