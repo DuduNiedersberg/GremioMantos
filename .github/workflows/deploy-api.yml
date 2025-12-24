@@ -62,29 +62,60 @@ jobs:
         echo "Password length: ${#TEST_PASSWORD} caracteres"
 
     - name: 'Testar autenticação Kudu'
+      env:
+        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
+        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
       run: |
         echo "🧪 Testando autenticação..."
         
         KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
         
+        echo "Tentando conectar ao Kudu..."
+        echo "Username primeiro caractere: ${KUDU_USER:0:1}"
+        echo "Username length: ${#KUDU_USER}"
+        echo "Password length: ${#KUDU_PASS}"
+        
+        # Teste com --user em vez de -u
         HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/test.txt \
-          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
           "$KUDU_URL/api/settings")
         
         echo "HTTP Status: $HTTP_CODE"
         
         if [ "$HTTP_CODE" -eq 200 ]; then
           echo "✅ Autenticação funcionando!"
+          echo "Settings retornados:"
+          cat /tmp/test.txt | head -20
         elif [ "$HTTP_CODE" -eq 401 ]; then
           echo "❌ Erro 401 - Credenciais inválidas!"
           echo ""
-          echo "Execute este comando para pegar as credenciais corretas:"
-          echo "az functionapp deployment list-publishing-credentials \\"
-          echo "  --name gremiomantosapi \\"
-          echo "  --resource-group Grêmio_Trikot_Mantos \\"
-          echo "  --query '{username:publishingUserName, password:publishingPassword}' -o json"
+          echo "Response body:"
+          cat /tmp/test.txt
           echo ""
-          exit 1
+          echo "Tentando formato alternativo de autenticação..."
+          
+          # Tentar com base64 manual
+          AUTH_HEADER=$(echo -n "${KUDU_USER}:${KUDU_PASS}" | base64)
+          
+          HTTP_CODE2=$(curl -s -w "%{http_code}" -o /tmp/test2.txt \
+            -H "Authorization: Basic ${AUTH_HEADER}" \
+            "$KUDU_URL/api/settings")
+          
+          echo "Tentativa 2 - HTTP Status: $HTTP_CODE2"
+          
+          if [ "$HTTP_CODE2" -eq 200 ]; then
+            echo "✅ Funcionou com header manual!"
+            cat /tmp/test2.txt | head -20
+          else
+            echo "❌ Também falhou"
+            echo ""
+            echo "Debugging:"
+            echo "1. Confirme que copiou username E password sem espaços extras"
+            echo "2. Username esperado deve começar com \$ ou conter \$"
+            echo "3. Tente resetar as credenciais no Azure:"
+            echo "   az functionapp deployment user set --user-name <novo-nome> --password <nova-senha>"
+            exit 1
+          fi
         else
           echo "⚠️ Status inesperado: $HTTP_CODE"
           cat /tmp/test.txt
@@ -92,34 +123,49 @@ jobs:
         fi
 
     - name: 'Remover WEBSITE_RUN_FROM_PACKAGE'
+      env:
+        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
+        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
       run: |
-        echo "🔧 Verificando e removendo WEBSITE_RUN_FROM_PACKAGE..."
+        echo "🔧 Desabilitando WEBSITE_RUN_FROM_PACKAGE..."
         
         KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
         
-        # Buscar settings
-        SETTINGS=$(curl -s \
-          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
-          "$KUDU_URL/api/settings")
+        # Primeiro, setar como 0 (desabilitar)
+        echo "Setando WEBSITE_RUN_FROM_PACKAGE=0..."
+        curl -X POST \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          -H "Content-Type: application/json" \
+          -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
+          "$KUDU_URL/api/settings"
         
-        echo "Settings atuais:"
-        echo "$SETTINGS" | jq '.' || echo "$SETTINGS"
+        sleep 5
+        
+        # Depois tentar deletar
+        echo "Tentando deletar WEBSITE_RUN_FROM_PACKAGE..."
+        curl -X DELETE \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE"
+        
+        sleep 5
+        
+        # Verificar
+        echo "Verificando configuração atual..."
+        SETTINGS=$(curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/settings")
         
         if echo "$SETTINGS" | grep -q "WEBSITE_RUN_FROM_PACKAGE"; then
-          echo ""
-          echo "⚠️ WEBSITE_RUN_FROM_PACKAGE existe! Removendo..."
+          PACKAGE_VALUE=$(echo "$SETTINGS" | grep -o '"WEBSITE_RUN_FROM_PACKAGE":"[^"]*"' | cut -d'"' -f4)
+          echo "⚠️ WEBSITE_RUN_FROM_PACKAGE ainda existe com valor: $PACKAGE_VALUE"
           
-          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
-            -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
-            "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE")
-          
-          DELETE_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
-          
-          if [ "$DELETE_CODE" -eq 200 ] || [ "$DELETE_CODE" -eq 204 ]; then
-            echo "✅ Removido com sucesso!"
-            sleep 10
+          if [ "$PACKAGE_VALUE" = "0" ]; then
+            echo "✅ Mas está desabilitado (valor = 0), pode prosseguir"
           else
-            echo "⚠️ Resposta ao deletar: $DELETE_CODE"
+            echo "⚠️ Tentando forçar valor 0 novamente..."
+            curl -X POST \
+              --user "${KUDU_USER}:${KUDU_PASS}" \
+              -H "Content-Type: application/json" \
+              -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
+              "$KUDU_URL/api/settings"
           fi
         else
           echo "✅ WEBSITE_RUN_FROM_PACKAGE não existe"
