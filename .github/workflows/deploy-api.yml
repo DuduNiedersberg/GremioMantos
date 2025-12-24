@@ -1,4 +1,4 @@
-name: Deploy Azure Functions API (via CLI)
+name: Deploy Azure Functions API (Kudu Direto)
 
 on:
   push:
@@ -26,13 +26,85 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
 
-    - name: 'Instalar Azure Functions Core Tools'
+    - name: 'Validar secrets'
       run: |
-        echo "📦 Instalando Azure Functions Core Tools..."
-        wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb
-        sudo dpkg -i packages-microsoft-prod.deb
-        sudo apt-get update
-        sudo apt-get install -y azure-functions-core-tools-4
+        echo "🔐 Validando configuração..."
+        
+        if [ -z "${{ secrets.AZURE_DEPLOY_USERNAME }}" ]; then
+          echo "❌ AZURE_DEPLOY_USERNAME não configurado!"
+          exit 1
+        fi
+        
+        if [ -z "${{ secrets.AZURE_DEPLOY_PASSWORD }}" ]; then
+          echo "❌ AZURE_DEPLOY_PASSWORD não configurado!"
+          exit 1
+        fi
+        
+        echo "✅ Secrets configurados"
+
+    - name: 'Testar autenticação Kudu'
+      run: |
+        echo "🧪 Testando autenticação..."
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/test.txt \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+          "$KUDU_URL/api/settings")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ "$HTTP_CODE" -eq 200 ]; then
+          echo "✅ Autenticação funcionando!"
+        elif [ "$HTTP_CODE" -eq 401 ]; then
+          echo "❌ Erro 401 - Credenciais inválidas!"
+          echo ""
+          echo "Execute este comando para pegar as credenciais corretas:"
+          echo "az functionapp deployment list-publishing-credentials \\"
+          echo "  --name gremiomantosapi \\"
+          echo "  --resource-group Grêmio_Trikot_Mantos \\"
+          echo "  --query '{username:publishingUserName, password:publishingPassword}' -o json"
+          echo ""
+          exit 1
+        else
+          echo "⚠️ Status inesperado: $HTTP_CODE"
+          cat /tmp/test.txt
+          exit 1
+        fi
+
+    - name: 'Remover WEBSITE_RUN_FROM_PACKAGE'
+      run: |
+        echo "🔧 Verificando e removendo WEBSITE_RUN_FROM_PACKAGE..."
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        # Buscar settings
+        SETTINGS=$(curl -s \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+          "$KUDU_URL/api/settings")
+        
+        echo "Settings atuais:"
+        echo "$SETTINGS" | jq '.' || echo "$SETTINGS"
+        
+        if echo "$SETTINGS" | grep -q "WEBSITE_RUN_FROM_PACKAGE"; then
+          echo ""
+          echo "⚠️ WEBSITE_RUN_FROM_PACKAGE existe! Removendo..."
+          
+          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
+            -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+            "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE")
+          
+          DELETE_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
+          
+          if [ "$DELETE_CODE" -eq 200 ] || [ "$DELETE_CODE" -eq 204 ]; then
+            echo "✅ Removido com sucesso!"
+            sleep 10
+          else
+            echo "⚠️ Resposta ao deletar: $DELETE_CODE"
+          fi
+        else
+          echo "✅ WEBSITE_RUN_FROM_PACKAGE não existe"
+        fi
 
     - name: 'Build da aplicação'
       working-directory: api
@@ -43,86 +115,102 @@ jobs:
         echo "🔨 Compilando TypeScript..."
         npm run build
         
-        echo "🧹 Limpando dev dependencies..."
-        npm prune --production
-        
         echo "✅ Build concluído!"
-        ls -la
 
-    - name: 'Login no Azure via Publish Profile'
-      run: |
-        echo "🔐 Configurando credenciais..."
-        
-        # Extrair informações do publish profile
-        echo "${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}" > /tmp/profile.xml
-        
-        USERNAME=$(grep -oP 'userName="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
-        PASSWORD=$(grep -oP 'userPWD="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
-        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
-        
-        rm /tmp/profile.xml
-        
-        # Remover WEBSITE_RUN_FROM_PACKAGE se existir
-        echo "🔧 Verificando WEBSITE_RUN_FROM_PACKAGE..."
-        
-        SETTINGS=$(curl -s -u "$USERNAME:$PASSWORD" "$KUDU_URL/api/settings")
-        
-        if echo "$SETTINGS" | grep -q "WEBSITE_RUN_FROM_PACKAGE"; then
-          echo "⚠️ Encontrado! Removendo..."
-          curl -X DELETE -u "$USERNAME:$PASSWORD" \
-            "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE"
-          echo "✅ Removido"
-          sleep 10
-        else
-          echo "✅ Não existe"
-        fi
-
-    - name: 'Deploy via Kudu ZIP Deploy'
+    - name: 'Preparar pacote ZIP'
       working-directory: api
       run: |
-        echo "📦 Criando pacote ZIP..."
-        zip -r deploy.zip . -x "*.git*" "node_modules/@types/*" "*.ts" "tsconfig.json"
+        echo "📦 Criando pacote de deploy..."
         
-        echo "Tamanho do ZIP:"
+        # Remover dev dependencies
+        npm prune --production
+        
+        # Criar ZIP com tudo
+        zip -r deploy.zip . \
+          -x "*.git*" \
+          -x "*.ts" \
+          -x "tsconfig.json" \
+          -x "*.test.js" \
+          -x "tests/*" \
+          -x ".env*"
+        
+        echo "✅ ZIP criado:"
         ls -lh deploy.zip
         
         echo ""
+        echo "📋 Primeiros 50 arquivos no ZIP:"
+        unzip -l deploy.zip | head -50
+
+    - name: 'Deploy via Kudu ZipDeploy'
+      working-directory: api
+      run: |
         echo "🚀 Fazendo deploy..."
-        
-        # Extrair credenciais
-        echo "${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}" > /tmp/profile.xml
-        USERNAME=$(grep -oP 'userName="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
-        PASSWORD=$(grep -oP 'userPWD="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
-        rm /tmp/profile.xml
         
         KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
         
         HTTP_CODE=$(curl -X POST \
-          -u "$USERNAME:$PASSWORD" \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
           --data-binary @deploy.zip \
           -H "Content-Type: application/zip" \
           -w "%{http_code}" \
           -o response.txt \
           --max-time 600 \
+          -v \
           "$KUDU_URL/api/zipdeploy")
         
+        echo ""
         echo "HTTP Status: $HTTP_CODE"
         
         if [ -f response.txt ]; then
-          echo "Response:"
+          echo "Response body:"
           cat response.txt
         fi
         
         if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
-          echo "✅ Deploy bem-sucedido!"
+          echo ""
+          echo "✅ Deploy iniciado com sucesso!"
         else
+          echo ""
           echo "❌ Deploy falhou com código $HTTP_CODE"
           exit 1
         fi
 
-    - name: 'Aguardar inicialização'
+    - name: 'Verificar status do deployment'
       run: |
-        echo "⏳ Aguardando cold start (90s)..."
+        echo "⏳ Aguardando conclusão do deployment..."
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        for i in {1..20}; do
+          echo "Verificação $i/20..."
+          
+          LATEST=$(curl -s \
+            -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+            "$KUDU_URL/api/deployments/latest")
+          
+          STATUS=$(echo "$LATEST" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+          PROGRESS=$(echo "$LATEST" | jq -r '.progress // ""' 2>/dev/null || echo "")
+          
+          echo "Status: $STATUS"
+          if [ -n "$PROGRESS" ]; then
+            echo "Progress: $PROGRESS"
+          fi
+          
+          if [ "$STATUS" = "4" ] || [ "$STATUS" = "Success" ]; then
+            echo "✅ Deployment completo!"
+            break
+          elif [ "$STATUS" = "3" ] || [ "$STATUS" = "Failed" ]; then
+            echo "❌ Deployment falhou!"
+            echo "$LATEST" | jq '.'
+            exit 1
+          fi
+          
+          sleep 10
+        done
+
+    - name: 'Aguardar cold start'
+      run: |
+        echo "⏳ Aguardando inicialização da Function App (90s)..."
         sleep 90
 
     - name: 'Health Check'
@@ -132,23 +220,25 @@ jobs:
         BASE_URL="https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net"
         
         for i in {1..10}; do
+          echo ""
           echo "Tentativa $i/10..."
           
-          RESPONSE=$(curl -s -w "\n%{http_code}" "$BASE_URL/api/health" || echo "error")
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$BASE_URL/api/health" 2>/dev/null || echo -e "\nerror")
           
-          if [ "$RESPONSE" != "error" ]; then
-            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-            BODY=$(echo "$RESPONSE" | head -n-1)
-            
-            echo "Status: $HTTP_CODE"
-            
-            if [ "$HTTP_CODE" -eq 200 ]; then
-              echo "✅ Health check passou!"
-              echo "Resposta: $BODY"
-              echo ""
-              echo "🎉 Deploy concluído com sucesso!"
-              exit 0
-            fi
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passou!"
+            echo "Resposta: $BODY"
+            echo ""
+            echo "🎉 Deploy concluído com sucesso!"
+            echo "🔗 Function App: $BASE_URL"
+            exit 0
+          elif [ "$HTTP_CODE" != "error" ]; then
+            echo "Body: $BODY"
           fi
           
           if [ $i -lt 10 ]; then
@@ -157,5 +247,6 @@ jobs:
           fi
         done
         
-        echo "⚠️ Health check não passou, mas deploy foi concluído"
+        echo ""
+        echo "⚠️ Health check não passou após 10 tentativas"
         echo "Verifique manualmente: $BASE_URL/api/health"
