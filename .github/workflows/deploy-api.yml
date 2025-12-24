@@ -3,37 +3,40 @@ name: Deploy Azure Functions API
 on:
   push: 
     branches: [main]
-    paths:
+    paths: 
       - 'api/**'
       - '. github/workflows/deploy-api. yml'
-  workflow_dispatch: 
+  workflow_dispatch:
 
 env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '20. x'
 
 jobs:
   build-and-deploy:
-    runs-on:  ubuntu-latest
+    runs-on: ubuntu-latest
     environment: production
     
     steps:
     - name: 'Checkout código'
       uses: actions/checkout@v4
 
-    - name:  'Setup Node.js ${{ env.NODE_VERSION }}'
+    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
       uses: actions/setup-node@v4
-      with: 
+      with:
         node-version: ${{ env.NODE_VERSION }}
 
     - name: 'Build da aplicação'
-      working-directory:  api
+      working-directory: api
       run: |
         echo "📦 Instalando dependências..."
         npm ci
+        
         echo "🔨 Compilando TypeScript..."
         npm run build
+        
         echo "✅ Build concluído!"
+        ls -la dist/
 
     - name: 'Preparar pacote ZIP'
       working-directory: api
@@ -42,6 +45,7 @@ jobs:
         mkdir -p deploy
         
         # Copiar arquivos compilados
+        echo "Copiando dist/ para deploy/..."
         cp -r dist/* deploy/
         
         # Copiar configurações
@@ -50,22 +54,26 @@ jobs:
         cp package-lock.json deploy/
         
         # Instalar dependências de produção
+        echo "Instalando dependências de produção..."
         cd deploy
         npm ci --omit=dev
         
-        # Criar ZIP
+        # Criar ZIP (arquivos na raiz, não dentro de pasta deploy/)
+        echo "Criando ZIP..."
+        zip -r ../deploy.zip . 
         cd ..
-        zip -r deploy.zip deploy/
         
         echo "✅ ZIP criado:  $(ls -lh deploy.zip)"
+        echo "📋 Conteúdo do ZIP:"
+        unzip -l deploy.zip | head -20
 
     - name: 'Deploy via Kudu ZIP API'
       working-directory: api
-      run: |
+      run:  |
         echo "🚀 Fazendo deploy via Kudu..."
         
         HTTP_CODE=$(curl -X POST \
-          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets. AZURE_DEPLOY_PASSWORD }}" \
           --data-binary @deploy.zip \
           -H "Content-Type: application/zip" \
           -w "%{http_code}" \
@@ -73,8 +81,12 @@ jobs:
           --max-time 300 \
           "https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net/api/zipdeploy")
         
-        echo "HTTP Status: $HTTP_CODE"
-        cat response.txt
+        echo "HTTP Status:  $HTTP_CODE"
+        
+        if [ -f response.txt ]; then
+          echo "Response:"
+          cat response.txt
+        fi
         
         if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
           echo "✅ Deploy bem-sucedido!"
@@ -84,7 +96,7 @@ jobs:
         fi
 
     - name: 'Aguardar inicialização'
-      run:  |
+      run: |
         echo "⏳ Aguardando cold start (60s)..."
         sleep 60
 
@@ -93,16 +105,26 @@ jobs:
         echo "🔍 Testando endpoint /api/health..."
         
         for i in {1..5}; do
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health)
-          echo "Tentativa $i: HTTP $HTTP_CODE"
+          echo "Tentativa $i/5..."
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health)
+          
+          echo "HTTP Status: $HTTP_CODE"
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ Health check passou!"
+            echo "Resposta:"
             curl https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health
             exit 0
           fi
           
-          sleep 10
+          if [ $i -lt 5 ]; then
+            echo "Aguardando 10s antes de tentar novamente..."
+            sleep 10
+          fi
         done
         
-        echo "⚠️ Health check não retornou 200 após 5 tentativas (verificar logs no Azure)"
+        echo "⚠️ Health check não retornou 200 após 5 tentativas"
+        echo "Isso pode ser normal no primeiro deploy (cold start longo)"
+        echo "Verifique manualmente:  https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health"
