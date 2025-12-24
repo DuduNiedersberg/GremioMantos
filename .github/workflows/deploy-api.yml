@@ -1,28 +1,28 @@
 name: Deploy Azure Functions API
 
 on:
-  push: 
-    branches: [main]
-    paths: 
+  push:  
+    branches:  [main]
+    paths:  
       - 'api/**'
-      - '. github/workflows/deploy-api. yml'
+      - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
 
 env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
-  NODE_VERSION: '20. x'
+  NODE_VERSION: '20.x'
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+  build-and-deploy: 
+    runs-on:  ubuntu-latest
     environment: production
     
     steps:
     - name: 'Checkout código'
-      uses: actions/checkout@v4
+      uses:  actions/checkout@v4
 
-    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
-      uses: actions/setup-node@v4
+    - name: 'Setup Node. js ${{ env.NODE_VERSION }}'
+      uses:  actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
 
@@ -40,7 +40,7 @@ jobs:
 
     - name: 'Preparar pacote ZIP'
       working-directory: api
-      run:  |
+      run: |
         echo "📁 Criando estrutura de deploy..."
         mkdir -p deploy
         
@@ -60,7 +60,7 @@ jobs:
         
         # Criar ZIP (arquivos na raiz, não dentro de pasta deploy/)
         echo "Criando ZIP..."
-        zip -r ../deploy.zip . 
+        zip -r ../deploy. zip .
         cd ..
         
         echo "✅ ZIP criado:  $(ls -lh deploy.zip)"
@@ -69,19 +69,19 @@ jobs:
 
     - name: 'Deploy via Kudu ZIP API'
       working-directory: api
-      run:  |
+      run: |
         echo "🚀 Fazendo deploy via Kudu..."
         
         HTTP_CODE=$(curl -X POST \
-          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets. AZURE_DEPLOY_PASSWORD }}" \
+          -u "${{ secrets.AZURE_DEPLOY_USERNAME }}:${{ secrets.AZURE_DEPLOY_PASSWORD }}" \
           --data-binary @deploy.zip \
           -H "Content-Type: application/zip" \
           -w "%{http_code}" \
           -o response.txt \
           --max-time 300 \
-          "https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net/api/zipdeploy")
+          "https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites. net/api/zipdeploy")
         
-        echo "HTTP Status:  $HTTP_CODE"
+        echo "HTTP Status: $HTTP_CODE"
         
         if [ -f response.txt ]; then
           echo "Response:"
@@ -104,7 +104,7 @@ jobs:
       run: |
         echo "🔍 Testando endpoint /api/health..."
         
-        for i in {1..5}; do
+        for i in {1.. 5}; do
           echo "Tentativa $i/5..."
           
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -127,4 +127,4 @@ jobs:
         
         echo "⚠️ Health check não retornou 200 após 5 tentativas"
         echo "Isso pode ser normal no primeiro deploy (cold start longo)"
-        echo "Verifique manualmente:  https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health"
+        echo "Verifique manualmente:  https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites. net/api/health"
