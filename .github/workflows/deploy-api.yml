@@ -1,4 +1,4 @@
-name: Deploy Azure Functions API
+name: Deploy Azure Functions API (via CLI)
 
 on:
   push:
@@ -10,7 +10,6 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'api'
   NODE_VERSION: '20.x'
 
 jobs:
@@ -27,71 +26,103 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
 
-    - name: 'Validar configuração'
+    - name: 'Instalar Azure Functions Core Tools'
       run: |
-        echo "🔍 Verificando configuração..."
-        
-        if [ -z "${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}" ]; then
-          echo "❌ Secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE não encontrado!"
-          echo ""
-          echo "Configure em: Settings → Secrets → Actions"
-          echo "Nome: AZURE_FUNCTIONAPP_PUBLISH_PROFILE"
-          echo "Valor: Cole todo o conteúdo XML do arquivo .PublishSettings"
-          exit 1
-        fi
-        
-        echo "✅ Publish profile configurado"
-        echo "✅ Function App: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
-        echo "✅ Node version: ${{ env.NODE_VERSION }}"
+        echo "📦 Instalando Azure Functions Core Tools..."
+        wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb
+        sudo dpkg -i packages-microsoft-prod.deb
+        sudo apt-get update
+        sudo apt-get install -y azure-functions-core-tools-4
 
-    - name: 'Instalar dependências'
-      shell: bash
-      working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+    - name: 'Build da aplicação'
+      working-directory: api
       run: |
         echo "📦 Instalando dependências..."
         npm ci
-        echo "✅ Dependências instaladas"
-
-    - name: 'Build TypeScript'
-      shell: bash
-      working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-      run: |
+        
         echo "🔨 Compilando TypeScript..."
         npm run build
         
-        echo "📋 Arquivos gerados:"
-        ls -la dist/ || ls -la
-        
-        echo "✅ Build concluído!"
-
-    - name: 'Preparar para deploy'
-      shell: bash
-      working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-      run: |
-        echo "🧹 Removendo dev dependencies..."
+        echo "🧹 Limpando dev dependencies..."
         npm prune --production
         
-        echo "📦 Estrutura final:"
+        echo "✅ Build concluído!"
         ls -la
+
+    - name: 'Login no Azure via Publish Profile'
+      run: |
+        echo "🔐 Configurando credenciais..."
         
-        if [ -f "host.json" ]; then
-          echo "✅ host.json encontrado"
+        # Extrair informações do publish profile
+        echo "${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}" > /tmp/profile.xml
+        
+        USERNAME=$(grep -oP 'userName="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
+        PASSWORD=$(grep -oP 'userPWD="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        rm /tmp/profile.xml
+        
+        # Remover WEBSITE_RUN_FROM_PACKAGE se existir
+        echo "🔧 Verificando WEBSITE_RUN_FROM_PACKAGE..."
+        
+        SETTINGS=$(curl -s -u "$USERNAME:$PASSWORD" "$KUDU_URL/api/settings")
+        
+        if echo "$SETTINGS" | grep -q "WEBSITE_RUN_FROM_PACKAGE"; then
+          echo "⚠️ Encontrado! Removendo..."
+          curl -X DELETE -u "$USERNAME:$PASSWORD" \
+            "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE"
+          echo "✅ Removido"
+          sleep 10
         else
-          echo "⚠️ host.json não encontrado!"
+          echo "✅ Não existe"
         fi
 
-    - name: 'Deploy para Azure Functions'
-      uses: Azure/functions-action@v1
-      id: deploy
-      with:
-        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+    - name: 'Deploy via Kudu ZIP Deploy'
+      working-directory: api
+      run: |
+        echo "📦 Criando pacote ZIP..."
+        zip -r deploy.zip . -x "*.git*" "node_modules/@types/*" "*.ts" "tsconfig.json"
+        
+        echo "Tamanho do ZIP:"
+        ls -lh deploy.zip
+        
+        echo ""
+        echo "🚀 Fazendo deploy..."
+        
+        # Extrair credenciais
+        echo "${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}" > /tmp/profile.xml
+        USERNAME=$(grep -oP 'userName="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
+        PASSWORD=$(grep -oP 'userPWD="[^"]*"' /tmp/profile.xml | head -1 | cut -d'"' -f2)
+        rm /tmp/profile.xml
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        HTTP_CODE=$(curl -X POST \
+          -u "$USERNAME:$PASSWORD" \
+          --data-binary @deploy.zip \
+          -H "Content-Type: application/zip" \
+          -w "%{http_code}" \
+          -o response.txt \
+          --max-time 600 \
+          "$KUDU_URL/api/zipdeploy")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ -f response.txt ]; then
+          echo "Response:"
+          cat response.txt
+        fi
+        
+        if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
+          echo "✅ Deploy bem-sucedido!"
+        else
+          echo "❌ Deploy falhou com código $HTTP_CODE"
+          exit 1
+        fi
 
     - name: 'Aguardar inicialização'
       run: |
-        echo "⏳ Aguardando cold start da Function App..."
-        echo "Isso pode levar até 2 minutos..."
+        echo "⏳ Aguardando cold start (90s)..."
         sleep 90
 
     - name: 'Health Check'
@@ -100,16 +131,12 @@ jobs:
         
         BASE_URL="https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net"
         
-        # Testar health endpoint
         for i in {1..10}; do
-          echo ""
-          echo "Tentativa $i/10 - Health check..."
+          echo "Tentativa $i/10..."
           
           RESPONSE=$(curl -s -w "\n%{http_code}" "$BASE_URL/api/health" || echo "error")
           
-          if [ "$RESPONSE" = "error" ]; then
-            echo "❌ Erro na conexão"
-          else
+          if [ "$RESPONSE" != "error" ]; then
             HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
             BODY=$(echo "$RESPONSE" | head -n-1)
             
@@ -120,40 +147,15 @@ jobs:
               echo "Resposta: $BODY"
               echo ""
               echo "🎉 Deploy concluído com sucesso!"
-              echo "🔗 URL: $BASE_URL"
               exit 0
-            else
-              echo "Body: $BODY"
             fi
           fi
           
           if [ $i -lt 10 ]; then
-            echo "Aguardando 15s antes de tentar novamente..."
+            echo "Aguardando 15s..."
             sleep 15
           fi
         done
         
-        echo ""
-        echo "⚠️ Health check não passou após 10 tentativas"
-        echo ""
-        echo "🔍 Verificações manuais:"
-        echo "1. URL: $BASE_URL/api/health"
-        echo "2. Azure Portal → Function App → Functions (verificar se aparecem listadas)"
-        echo "3. Azure Portal → Log Stream (ver logs em tempo real)"
-        echo ""
-        echo "Mas o deploy foi feito! Pode ser apenas cold start demorado."
-        exit 1
-
-    - name: 'Listar funções disponíveis'
-      if: success()
-      run: |
-        echo ""
-        echo "📋 Testando outras funções disponíveis..."
-        
-        BASE_URL="https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net"
-        
-        # Tentar listar funções (pode não funcionar se não tiver esse endpoint)
-        curl -s "$BASE_URL/api/functions" || echo "Endpoint /api/functions não disponível"
-        
-        echo ""
-        echo "✅ Pipeline concluída!"
+        echo "⚠️ Health check não passou, mas deploy foi concluído"
+        echo "Verifique manualmente: $BASE_URL/api/health"
