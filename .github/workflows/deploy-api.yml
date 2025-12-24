@@ -1,11 +1,11 @@
 name: Deploy Azure Functions API
 
 on:
-  push:  
-    branches:  [main]
-    paths:  
+  push:
+    branches: [main]
+    paths:
       - 'api/**'
-      - '.github/workflows/deploy-api.yml'
+      - '. github/workflows/deploy-api.yml'
   workflow_dispatch:
 
 env:
@@ -14,14 +14,14 @@ env:
 
 jobs:
   build-and-deploy: 
-    runs-on:  ubuntu-latest
+    runs-on: ubuntu-latest
     environment: production
     
     steps:
     - name: 'Checkout código'
       uses:  actions/checkout@v4
 
-    - name: 'Setup Node. js ${{ env.NODE_VERSION }}'
+    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
       uses:  actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
@@ -58,12 +58,13 @@ jobs:
         cd deploy
         npm ci --omit=dev
         
-        # Criar ZIP (arquivos na raiz, não dentro de pasta deploy/)
+        # Criar ZIP
         echo "Criando ZIP..."
-        zip -r ../deploy. zip .
+        zip -r ../deploy.zip . 
         cd ..
         
-        echo "✅ ZIP criado:  $(ls -lh deploy.zip)"
+        echo "✅ ZIP criado:"
+        ls -lh deploy.zip
         echo "📋 Conteúdo do ZIP:"
         unzip -l deploy.zip | head -20
 
@@ -81,7 +82,7 @@ jobs:
           --max-time 300 \
           "https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites. net/api/zipdeploy")
         
-        echo "HTTP Status: $HTTP_CODE"
+        echo "HTTP Status:  $HTTP_CODE"
         
         if [ -f response.txt ]; then
           echo "Response:"
@@ -101,7 +102,7 @@ jobs:
         sleep 60
 
     - name: 'Health Check'
-      run: |
+      run:  |
         echo "🔍 Testando endpoint /api/health..."
         
         for i in {1.. 5}; do
@@ -126,5 +127,4 @@ jobs:
         done
         
         echo "⚠️ Health check não retornou 200 após 5 tentativas"
-        echo "Isso pode ser normal no primeiro deploy (cold start longo)"
         echo "Verifique manualmente:  https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites. net/api/health"
