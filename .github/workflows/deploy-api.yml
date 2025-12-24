@@ -27,20 +27,39 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
 
     - name: 'Validar secrets'
+      env:
+        TEST_USERNAME: ${{ secrets.AZURE_DEPLOY_USERNAME }}
+        TEST_PASSWORD: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
       run: |
         echo "🔐 Validando configuração..."
         
-        if [ -z "${{ secrets.AZURE_DEPLOY_USERNAME }}" ]; then
-          echo "❌ AZURE_DEPLOY_USERNAME não configurado!"
+        echo "Debug info:"
+        echo "Username env var length: ${#TEST_USERNAME}"
+        echo "Password env var length: ${#TEST_PASSWORD}"
+        
+        if [ -z "$TEST_USERNAME" ]; then
+          echo "❌ AZURE_DEPLOY_USERNAME não configurado ou vazio!"
+          echo ""
+          echo "Verifique:"
+          echo "1. GitHub → Settings → Secrets and variables → Actions"
+          echo "2. Deve existir: AZURE_DEPLOY_USERNAME (exatamente assim, maiúsculo)"
+          echo "3. Se existir, delete e crie novamente"
           exit 1
         fi
         
-        if [ -z "${{ secrets.AZURE_DEPLOY_PASSWORD }}" ]; then
-          echo "❌ AZURE_DEPLOY_PASSWORD não configurado!"
+        if [ -z "$TEST_PASSWORD" ]; then
+          echo "❌ AZURE_DEPLOY_PASSWORD não configurado ou vazio!"
+          echo ""
+          echo "Verifique:"
+          echo "1. GitHub → Settings → Secrets and variables → Actions"
+          echo "2. Deve existir: AZURE_DEPLOY_PASSWORD (exatamente assim, maiúsculo)"
+          echo "3. Se existir, delete e crie novamente"
           exit 1
         fi
         
-        echo "✅ Secrets configurados"
+        echo "✅ Secrets configurados corretamente"
+        echo "Username começa com: ${TEST_USERNAME:0:2}..."
+        echo "Password length: ${#TEST_PASSWORD} caracteres"
 
     - name: 'Testar autenticação Kudu'
       run: |
