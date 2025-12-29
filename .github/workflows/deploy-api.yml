@@ -310,40 +310,56 @@ jobs:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
-          set -euo pipefail
+          set -e
 
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
           KUDU_BASE="https://${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net"
 
-          echo "Testing if /api/zipdeploy is available..."
-          HTTP_CODE=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X GET "${KUDU_BASE}/api/zipdeploy" \
-            -w "%{http_code}" -o /tmp/test_zipdeploy.txt)
-          
-          echo "HTTP Code: $HTTP_CODE"
-          cat /tmp/test_zipdeploy.txt || true
-          
-          if grep -q "No route registered" /tmp/test_zipdeploy.txt 2>/dev/null; then
-            echo ""
-            echo "❌ ERROR: zipdeploy endpoint still not available!"
-            echo "SCM_RUN_FROM_PACKAGE might still be active or app didn't restart properly"
-            echo ""
-            echo "Checking settings one more time:"
-            curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | \
-              jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE}' || true
+          if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
+            echo "❌ Failed to extract credentials from publishProfile.xml"
             exit 1
           fi
+
+          echo "Kudu Base: $KUDU_BASE"
+          echo "Testing if /api/zipdeploy is available..."
           
-          echo "✅ Zipdeploy endpoint is available"
+          HTTP_CODE=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
+            -X GET "${KUDU_BASE}/api/zipdeploy" \
+            -w "%{http_code}" -o /tmp/test_zipdeploy.txt 2>&1 || echo "error")
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response:"
+          cat /tmp/test_zipdeploy.txt 2>/dev/null || echo "(no response file)"
+          
+          if [ -f /tmp/test_zipdeploy.txt ]; then
+            if grep -q "No route registered" /tmp/test_zipdeploy.txt 2>/dev/null; then
+              echo ""
+              echo "❌ ERROR: zipdeploy endpoint still not available!"
+              echo "SCM_RUN_FROM_PACKAGE might still be active or app didn't restart properly"
+              echo ""
+              echo "Checking settings one more time:"
+              curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" 2>/dev/null | \
+                jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE}' 2>/dev/null || echo "Could not get settings"
+              
+              echo ""
+              echo "⚠️ Will try alternative deployment method instead"
+              echo "ZIPDEPLOY_AVAILABLE=false" >> $GITHUB_ENV
+              exit 0
+            fi
+          fi
+          
+          echo "✅ Zipdeploy endpoint appears to be available"
+          echo "ZIPDEPLOY_AVAILABLE=true" >> $GITHUB_ENV
 
       - name: Deploy via Kudu ZipDeploy (Method 1 - Standard)
+        if: env.ZIPDEPLOY_AVAILABLE != 'false'
         working-directory: api
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
-          set -euo pipefail
+          set -e
 
           if [ ! -f deploy_package.zip ]; then
             echo "❌ deploy_package.zip not found"
@@ -355,25 +371,25 @@ jobs:
           KUDU_API="https://${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net/api/zipdeploy"
 
           echo "Deploying to: $KUDU_API"
-          echo "Package size: $(stat -c%s deploy_package.zip || stat -f%z deploy_package.zip) bytes"
+          echo "Package size: $(stat -c%s deploy_package.zip 2>/dev/null || stat -f%z deploy_package.zip 2>/dev/null) bytes"
 
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt \
             -u "${KUDU_USER}:${KUDU_PASS}" \
             -X POST "$KUDU_API" \
             --data-binary @deploy_package.zip \
             -H "Content-Type: application/zip" \
-            --max-time 600)
+            --max-time 600 2>&1 || echo "error")
           
           echo "HTTP Code: $HTTP_CODE"
           echo "Response:"
-          cat /tmp/zipdeploy_result.txt || true
+          cat /tmp/zipdeploy_result.txt 2>/dev/null || echo "(no response)"
 
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          if [ "$HTTP_CODE" != "error" ] && [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ ZipDeploy succeeded!"
             echo "DEPLOY_SUCCESS=true" >> $GITHUB_ENV
           else
             echo "❌ ZipDeploy failed with HTTP $HTTP_CODE"
-            echo "Trying alternative method..."
+            echo "Will try alternative method..."
             echo "DEPLOY_SUCCESS=false" >> $GITHUB_ENV
           fi
 
@@ -384,7 +400,7 @@ jobs:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
-          set -euo pipefail
+          set -e
 
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
@@ -396,17 +412,18 @@ jobs:
             -X PUT "${KUDU_BASE}/api/zip/site/wwwroot/" \
             --data-binary @deploy_package.zip \
             -H "Content-Type: application/zip" \
-            --max-time 600)
+            --max-time 600 2>&1 || echo "error")
           
           echo "HTTP Code: $HTTP_CODE"
-          cat /tmp/vfs_result.txt || true
+          echo "Response:"
+          cat /tmp/vfs_result.txt 2>/dev/null || echo "(no response)"
 
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          if [ "$HTTP_CODE" != "error" ] && [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ VFS deployment succeeded!"
             
             echo "Syncing triggers..."
             curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-              -X POST "${KUDU_BASE}/api/functions/synctriggers"
+              -X POST "${KUDU_BASE}/api/functions/synctriggers" 2>/dev/null || true
             
             echo "DEPLOY_SUCCESS=true" >> $GITHUB_ENV
           else
