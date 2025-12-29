@@ -1,6 +1,5 @@
-# Workflow: build + deploy Azure Functions (usando Publish Profile)
-# Requer: secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE adicionado ao repositório
-name: Deploy API to Azure Functions
+# Workflow: build + deploy Azure Functions (usando Service Principal / RBAC)
+name: Deploy API to Azure Functions (RBAC)
 
 on:
   push:
@@ -27,22 +26,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate AZURE_CREDENTIALS secret
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          if [ -z "$AZURE_CREDENTIALS" ]; then
+            echo "❌ AZURE_CREDENTIALS secret not found. Create it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "✅ AZURE_CREDENTIALS present (length: ${#AZURE_CREDENTIALS})"
+
+      - name: Login to Azure (Service Principal / RBAC)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
-
-      - name: Validate Publish Profile secret
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        run: |
-          if [ -z "$PUBLISH_PROFILE" ]; then
-            echo "❌ AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret not found. Add it at Settings → Secrets and variables → Actions"
-            exit 1
-          fi
-          echo "✅ AZURE_FUNCTIONAPP_PUBLISH_PROFILE present (length: ${#PUBLISH_PROFILE})"
 
       - name: Install dependencies & Build
         working-directory: api
@@ -80,13 +84,12 @@ jobs:
           echo "Listing top-level files in api/:"
           ls -la
 
-      - name: Deploy to Azure Functions (via Publish Profile)
+      - name: Deploy to Azure Functions (RBAC)
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: './api'
-        env:
-          AZURE_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        # No AZURE_FUNCTIONAPP_PUBLISH_PROFILE needed when using RBAC (azure/login)
 
       - name: Wait for app to warm up
         run: |
@@ -97,7 +100,6 @@ jobs:
         run: |
           APP_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
           echo "Checking $APP_URL"
-          # Try 3 times with backoff
           n=0
           until [ $n -ge 3 ]
           do
@@ -114,6 +116,5 @@ jobs:
 
           if [ "$HTTP_CODE" != "200" ]; then
             echo "⚠️ Health check failed (last HTTP code: $HTTP_CODE). Check Function App logs in Azure Portal."
-            # do not fail the job here to avoid masking useful deployment logs; remove `exit 0` below if you want CI to fail on health check
             exit 0
           fi
