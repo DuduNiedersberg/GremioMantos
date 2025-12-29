@@ -177,6 +177,7 @@ jobs:
         working-directory: api
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
           set -euo pipefail
 
@@ -185,31 +186,44 @@ jobs:
             exit 1
           fi
 
-          # extract publishUrl robustly and strip any scheme/path
-          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-          if [ -z "$PUBLISH_URL_RAW" ]; then
-            echo "❌ publishUrl not found in publishProfile.xml"
-            exit 1
+          # gather all publishUrl entries, prefer .scm. or azurewebsites.net (not ftp)
+          mapfile -t URLS < <(grep -oP 'publishUrl="[^"]+"' publishProfile.xml | sed -E 's/publishUrl="([^"]+)"/\1/')
+          CHOSEN=""
+          for u in "${URLS[@]}"; do
+            # strip scheme and path and credentials
+            hs=$(echo "$u" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
+            hs=$(echo "$hs" | awk -F'@' '{print $NF}')
+            # skip ftp/waws-prod ftp entries
+            if echo "$hs" | grep -qiE 'ftp|waws-prod'; then
+              continue
+            fi
+            if echo "$hs" | grep -q '\.scm\.'; then
+              CHOSEN="$hs"
+              break
+            fi
+            if echo "$hs" | grep -q '\.azurewebsites\.net'; then
+              CHOSEN="$hs"
+              break
+            fi
+          done
+
+          if [ -z "$CHOSEN" ]; then
+            echo "No suitable publishUrl found in publishProfile.xml; falling back to ${AZURE_FUNCTIONAPP_NAME}.scm.azurewebsites.net"
+            CHOSEN="${AZURE_FUNCTIONAPP_NAME}.scm.azurewebsites.net"
           fi
 
-          # remove scheme (ftp://, ftps://, https://, http://) and trailing path, keep host[:port]
-          HOST_STRIPPED=$(echo "$PUBLISH_URL_RAW" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
-          # remove credentials if present (user:pass@host)
-          HOST_STRIPPED=$(echo "$HOST_STRIPPED" | awk -F'@' '{print $NF}')
-
-          echo "publishUrl raw: $PUBLISH_URL_RAW"
-          echo "host stripped: $HOST_STRIPPED"
-
-          # derive KUDU host
-          if echo "$HOST_STRIPPED" | grep -q '\.scm\.'; then
-            KUDU_HOST="$HOST_STRIPPED"
-          elif echo "$HOST_STRIPPED" | grep -q '\.azurewebsites\.net$'; then
-            KUDU_HOST=$(echo "$HOST_STRIPPED" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
+          # build KUDU_BASE from CHOSEN host
+          # if CHOSEN is like app.azurewebsites.net, convert to app.scm.azurewebsites.net
+          if echo "$CHOSEN" | grep -q '\.scm\.'; then
+            KUDU_HOST="$CHOSEN"
+          elif echo "$CHOSEN" | grep -q '\.azurewebsites\.net$'; then
+            KUDU_HOST=$(echo "$CHOSEN" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
           else
-            KUDU_HOST="$HOST_STRIPPED"
+            KUDU_HOST="$CHOSEN"
           fi
 
           KUDU_BASE="https://${KUDU_HOST}"
+          echo "Selected Kudu host: $KUDU_HOST"
           echo "Kudu base: $KUDU_BASE"
 
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
@@ -243,6 +257,7 @@ jobs:
         working-directory: api
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
           set -euo pipefail
 
@@ -257,24 +272,49 @@ jobs:
             exit 1
           fi
 
-          # extract publishUrl robustly and strip any scheme/path
-          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-          HOST_STRIPPED=$(echo "$PUBLISH_URL_RAW" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
-          HOST_STRIPPED=$(echo "$HOST_STRIPPED" | awk -F'@' '{print $NF}')
+          # gather all publishUrl entries and choose best as above
+          mapfile -t URLS < <(grep -oP 'publishUrl="[^"]+"' publishProfile.xml | sed -E 's/publishUrl="([^"]+)"/\1/')
+          CHOSEN=""
+          for u in "${URLS[@]}"; do
+            hs=$(echo "$u" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
+            hs=$(echo "$hs" | awk -F'@' '{print $NF}')
+            if echo "$hs" | grep -qiE 'ftp|waws-prod'; then
+              continue
+            fi
+            if echo "$hs" | grep -q '\.scm\.'; then
+              CHOSEN="$hs"
+              break
+            fi
+            if echo "$hs" | grep -q '\.azurewebsites\.net'; then
+              CHOSEN="$hs"
+              break
+            fi
+          done
 
-          if echo "$HOST_STRIPPED" | grep -q '\.scm\.'; then
-            KUDU_HOST="$HOST_STRIPPED"
-          elif echo "$HOST_STRIPPED" | grep -q '\.azurewebsites\.net$'; then
-            KUDU_HOST=$(echo "$HOST_STRIPPED" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
+          if [ -z "$CHOSEN" ]; then
+            echo "No suitable publishUrl found in publishProfile.xml; falling back to ${AZURE_FUNCTIONAPP_NAME}.scm.azurewebsites.net"
+            CHOSEN="${AZURE_FUNCTIONAPP_NAME}.scm.azurewebsites.net"
+          fi
+
+          if echo "$CHOSEN" | grep -q '\.scm\.'; then
+            KUDU_HOST="$CHOSEN"
+          elif echo "$CHOSEN" | grep -q '\.azurewebsites\.net$'; then
+            KUDU_HOST=$(echo "$CHOSEN" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
           else
-            KUDU_HOST="$HOST_STRIPPED"
+            KUDU_HOST="$CHOSEN"
           fi
 
           KUDU_API="https://${KUDU_HOST}/api/zipdeploy"
+          echo "Kudu API: $KUDU_API"
+
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
 
-          echo "Kudu API: $KUDU_API"
+          if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
+            echo "❌ Could not extract KUDU user or password from publishProfile.xml"
+            exit 1
+          fi
+
           echo "Deploying deploy_package.zip via Kudu..."
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt -u "${KUDU_USER}:${KUDU_PASS}" \
             -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip" || true)
