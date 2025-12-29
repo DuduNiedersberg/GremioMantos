@@ -184,44 +184,55 @@ jobs:
 
     - name: 'Preparar pacote ZIP'
       working-directory: api
-      env:
-        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
       run: |
         echo "📦 Criando pacote de deploy..."
         
-        # Verificar estrutura antes de zipar
-        echo "Estrutura atual:"
+        # Verificar estrutura antes
+        echo "Estrutura do projeto:"
         ls -la
         
         echo ""
         echo "Conteúdo de dist/:"
-        ls -la dist/ || echo "Pasta dist não existe"
+        ls -la dist/
         
         # Remover dev dependencies
+        echo ""
         echo "Removendo dev dependencies..."
         npm prune --production
         
-        # Verificar se host.json existe
-        if [ ! -f "host.json" ]; then
-          echo "❌ ERRO: host.json não encontrado!"
-          exit 1
-        fi
+        # Criar diretório temporário para estrutura correta
+        echo ""
+        echo "Preparando estrutura de deploy..."
+        mkdir -p deploy_package
         
-        # Verificar se tem funções
-        if [ ! -d "dist" ]; then
-          echo "❌ ERRO: pasta dist não encontrada!"
-          exit 1
-        fi
+        # Copiar host.json e package files para raiz
+        cp host.json deploy_package/
+        cp package.json deploy_package/
+        cp package-lock.json deploy_package/
         
-        # Criar ZIP incluindo node_modules
+        # IMPORTANTE: Copiar CONTEÚDO de dist (não a pasta) para raiz
+        # Isso garante que as funções fiquem na raiz do ZIP
+        echo "Copiando funções compiladas..."
+        cp -r dist/* deploy_package/
+        
+        # Copiar node_modules
+        echo "Copiando node_modules..."
+        cp -r node_modules deploy_package/
+        
+        # Verificar estrutura antes de zipar
+        echo ""
+        echo "Estrutura final antes do ZIP:"
+        cd deploy_package
+        ls -la
+        
+        echo ""
+        echo "Verificando se existem function.json:"
+        find . -name "function.json" -type f
+        
+        # Criar ZIP
+        echo ""
         echo "Criando ZIP..."
-        zip -r deploy.zip \
-          dist \
-          node_modules \
-          host.json \
-          package.json \
-          package-lock.json \
+        zip -r ../deploy.zip . \
           -x "*.git*" \
           -x "*.ts" \
           -x "tsconfig.json" \
@@ -230,20 +241,81 @@ jobs:
           -x ".env*" \
           -x "node_modules/@types/*"
         
+        cd ..
+        
+        echo ""
         echo "✅ ZIP criado:"
         ls -lh deploy.zip
         
         echo ""
-        echo "📋 Estrutura do ZIP (primeiros 100 arquivos):"
-        unzip -l deploy.zip | head -100
+        echo "📋 Primeiros 50 arquivos do ZIP:"
+        unzip -l deploy.zip | head -50
         
         echo ""
-        echo "Verificando se host.json está na raiz do ZIP:"
-        unzip -l deploy.zip | grep "host.json"
+        echo "🔍 Verificações importantes:"
+        echo "1. host.json na raiz:"
+        unzip -l deploy.zip | grep "^.*host\.json$" || echo "   ❌ NÃO ENCONTRADO NA RAIZ"
+        
+        echo "2. function.json files:"
+        unzip -l deploy.zip | grep "function\.json$" || echo "   ❌ NENHUM ENCONTRADO"
+        
+        echo "3. Estrutura das funções (devem estar como: NomeFuncao/function.json):"
+        unzip -l deploy.zip | grep "function\.json$" | head -10
+
+    - name: 'Debug: Inspecionar ZIP completo'
+      working-directory: api
+      run: |
+        echo "🔍 DIAGNÓSTICO COMPLETO DO ZIP"
+        echo "================================"
+        
+        # Extrair para inspeção
+        mkdir -p zip_check
+        unzip -q deploy.zip -d zip_check
+        
+        cd zip_check
         
         echo ""
-        echo "Verificando funções no ZIP:"
-        unzip -l deploy.zip | grep "function.json" || echo "⚠️ Nenhum function.json encontrado!"
+        echo "1️⃣ Arquivos na RAIZ do ZIP:"
+        ls -la
+        
+        echo ""
+        echo "2️⃣ host.json existe na raiz?"
+        if [ -f "host.json" ]; then
+          echo "✅ SIM"
+          echo "Conteúdo:"
+          cat host.json
+        else
+          echo "❌ NÃO - ISSO VAI CAUSAR ERRO 400!"
+        fi
+        
+        echo ""
+        echo "3️⃣ Pastas de funções encontradas:"
+        find . -maxdepth 1 -type d ! -name "." ! -name ".." ! -name "node_modules" | sort
+        
+        echo ""
+        echo "4️⃣ Todos os function.json encontrados:"
+        find . -name "function.json" -type f | while read file; do
+          echo ""
+          echo "📄 $file"
+          head -20 "$file"
+        done
+        
+        echo ""
+        echo "5️⃣ package.json na raiz?"
+        if [ -f "package.json" ]; then
+          echo "✅ SIM"
+        else
+          echo "❌ NÃO"
+        fi
+        
+        echo ""
+        echo "6️⃣ node_modules existe?"
+        if [ -d "node_modules" ]; then
+          echo "✅ SIM"
+          echo "Tamanho: $(du -sh node_modules 2>/dev/null | cut -f1 || echo 'N/A')"
+        else
+          echo "❌ NÃO"
+        fi
 
     - name: 'Deploy via Kudu ZipDeploy'
       working-directory: api
