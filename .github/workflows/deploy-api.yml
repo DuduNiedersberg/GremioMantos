@@ -87,8 +87,16 @@ jobs:
           echo "Saving publish profile to ./publishProfile.xml"
           printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
-          # show publishUrl safe for debug
           sed -n 's/.*publishUrl="\([^"]*\)".*/PublishUrl: \1/p' publishProfile.xml | head -1 || true
+
+      - name: Install system packages (zip)
+        run: |
+          set -euo pipefail
+          echo "Installing zip utility (required for packaging fallback)..."
+          sudo apt-get update -y
+          sudo apt-get install -y zip unzip jq || true
+          echo "zip version: $(zip -v 2>/dev/null | head -n 1 || true)"
+          echo "unzip version: $(unzip -v 2>/dev/null | head -n 1 || true)"
 
       - name: Install Azure Functions Core Tools (v4)
         run: |
@@ -109,24 +117,34 @@ jobs:
           echo "Node version: $(node --version || true)"
           echo "func version: $(func --version || true)"
           echo ""
-          echo "Attempting func pack to create deploy_package.zip..."
-          rm -rf deploy_package.zip || true
-          if func pack --output deploy_package.zip; then
-            echo "✅ func pack succeeded"
-            # func pack sometimes creates a directory; normalize below
-            if [ -d deploy_package.zip ]; then
-              echo "func pack created a directory named deploy_package.zip — will compress into a proper zip file"
-              zip -r deploy_package_tmp.zip deploy_package.zip/* || true
-              mv -f deploy_package_tmp.zip deploy_package.zip
-              rm -rf deploy_package.zip/* deploy_package.zip || true 2>/dev/null || true
+
+          # cleanup previous possible artifacts
+          rm -f deploy_package.zip || true
+          rm -rf deploy_package || true
+          rm -rf tmp_deploy || true
+
+          echo "Attempting func pack to create deploy_package or deploy_package.zip..."
+          if func pack --output deploy_package 2>&1 | tee func_pack.log; then
+            echo "✅ func pack succeeded or created deploy_package directory"
+            # if created directory deploy_package, compress it
+            if [ -d deploy_package ]; then
+              echo "Compressing deploy_package directory -> deploy_package.zip"
+              (cd deploy_package && zip -r ../deploy_package.zip .) || true
+              echo "Created deploy_package.zip from deploy_package directory"
+              ls -lh deploy_package.zip || true
+              # keep deploy_package.zip and remove directory
+              rm -rf deploy_package || true
+            elif [ -f deploy_package.zip ]; then
+              echo "func pack produced deploy_package.zip directly"
+              ls -lh deploy_package.zip || true
+            else
+              echo "Warning: func pack did not produce expected output; see func_pack.log"
+              tail -n 200 func_pack.log || true
             fi
-            ls -lh deploy_package.zip || true
-            echo "Contents (top 60 lines):"
-            unzip -l deploy_package.zip | head -60 || true
           else
-            echo "⚠️ func pack failed — creating manual deploy_package.zip as fallback"
-            rm -f deploy_package.zip || true
-            rm -rf tmp_deploy || true
+            echo "⚠️ func pack failed — see func_pack.log and will create manual deploy_package.zip fallback"
+            tail -n 200 func_pack.log || true
+            echo "Creating manual deploy_package.zip (host.json, package.json, package-lock.json, dist, node_modules)..."
             mkdir -p tmp_deploy
             cp -v host.json tmp_deploy/ || true
             cp -v package.json tmp_deploy/ || true
@@ -139,29 +157,19 @@ jobs:
             if [ -d node_modules ]; then
               cp -r node_modules tmp_deploy/ || true
             fi
-            cd tmp_deploy
-            zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*" || true
-            cd ..
-            rm -rf tmp_deploy || true
+            (cd tmp_deploy && zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*") || true
             ls -lh deploy_package.zip || true
-            echo "Manual package contents (top 80):"
-            unzip -l deploy_package.zip | head -80 || true
+            rm -rf tmp_deploy || true
           fi
 
-      - name: Normalize deploy_package.zip if it's a directory (safety)
-        working-directory: api
-        run: |
-          set -euo pipefail
-          if [ -d deploy_package.zip ]; then
-            echo "deploy_package.zip is a directory — creating proper zip file"
-            zip -r deploy_package_temp.zip deploy_package.zip/* || true
-            mv -f deploy_package_temp.zip deploy_package.zip
-            rm -rf deploy_package.zip/* || true
-          fi
+          # Final check: ensure we have a .zip file
           if [ -f deploy_package.zip ]; then
             echo "Final deploy_package.zip size: $(stat -c%s deploy_package.zip || stat -f%z deploy_package.zip)"
+            echo "Contents (top 60):"
+            unzip -l deploy_package.zip | head -60 || true
           else
             echo "❌ deploy_package.zip not found after packaging steps"
+            echo "Workspace listing:"
             ls -la
             exit 1
           fi
@@ -173,13 +181,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # publishProfile.xml is expected to exist (created earlier)
           if [ ! -f publishProfile.xml ]; then
             echo "❌ publishProfile.xml missing. Aborting."
             exit 1
           fi
 
-          # extract publishUrl, user and password (robust with sed)
           PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           if [ -z "$PUBLISH_URL_RAW" ]; then
             echo "❌ publishUrl not found in publishProfile.xml"
@@ -202,7 +208,6 @@ jobs:
           fi
 
           echo "Kudu base: $KUDU_BASE (using publish profile credentials)"
-
           echo "Current settings (partial):"
           curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE, .WEBSITE_NODE_DEFAULT_VERSION' || true
 
@@ -237,7 +242,6 @@ jobs:
             exit 1
           fi
 
-          # ensure publishProfile.xml exists
           if [ ! -f publishProfile.xml ]; then
             echo "❌ publishProfile.xml missing. Aborting."
             exit 1
