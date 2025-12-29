@@ -31,7 +31,7 @@ jobs:
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         run: |
-          if [ -z "$PUBLISH_PROFILE" ]; then
+          if [ -z "${PUBLISH_PROFILE:-}" ]; then
             echo "❌ AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret not found. Add it at Settings → Secrets and variables → Actions"
             exit 1
           fi
@@ -47,6 +47,7 @@ jobs:
       - name: Install dependencies & Build
         working-directory: api
         run: |
+          set -euo pipefail
           echo "📦 Installing dependencies"
           npm ci
 
@@ -59,12 +60,14 @@ jobs:
       - name: Prune devDependencies to make package lighter
         working-directory: api
         run: |
+          set -euo pipefail
           npm prune --production || true
           du -sh node_modules || true
 
       - name: Verify package structure
         working-directory: api
         run: |
+          set -euo pipefail
           echo "Checking host.json presence..."
           if [ ! -f host.json ]; then
             echo "❌ host.json not found in api/ — deploy likely to fail"
@@ -80,14 +83,16 @@ jobs:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         working-directory: api
         run: |
+          set -euo pipefail
           echo "Saving publish profile to ./publishProfile.xml"
           printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
-          # show publishUrl (safe) for debug (no secrets)
+          # show publishUrl safe for debug
           sed -n 's/.*publishUrl="\([^"]*\)".*/PublishUrl: \1/p' publishProfile.xml | head -1 || true
 
       - name: Install Azure Functions Core Tools (v4)
         run: |
+          set -euo pipefail
           echo "Installing Azure Functions Core Tools v4..."
           npm i -g azure-functions-core-tools@4 --unsafe-perm true
           echo "func version: $(func --version || true)"
@@ -98,9 +103,9 @@ jobs:
           FUNCTIONS_WORKER_RUNTIME: node
           WEBSITE_NODE_DEFAULT_VERSION: 20
         run: |
-          set -e
+          set -euo pipefail
           echo "ENV CHECK:"
-          echo "FUNCTIONS_WORKER_RUNTIME=$FUNCTIONS_WORKER_RUNTIME"
+          echo "FUNCTIONS_WORKER_RUNTIME=${FUNCTIONS_WORKER_RUNTIME:-}"
           echo "Node version: $(node --version || true)"
           echo "func version: $(func --version || true)"
           echo ""
@@ -112,7 +117,7 @@ jobs:
             unzip -l deploy_package.zip | head -60 || true
           else
             echo "⚠️ func pack failed — creating manual deploy_package.zip as fallback"
-            rm -f deploy_package.zip
+            rm -f deploy_package.zip || true
             mkdir -p tmp_deploy
             cp -v host.json tmp_deploy/ || true
             cp -v package.json tmp_deploy/ || true
@@ -133,40 +138,94 @@ jobs:
             unzip -l deploy_package.zip | head -80 || true
           fi
 
-      - name: Extract Kudu credentials from publishProfile and zipdeploy
+      - name: Ensure no Run-From-Package and restart (Kudu)
         working-directory: api
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         run: |
-          set -e
-          echo "Extracting Kudu credentials from publishProfile.xml"
+          set -euo pipefail
 
-          # Extract publishUrl, userName and userPWD using sed (robust against quoting)
-          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-          if [ -z "$PUBLISH_URL_RAW" ]; then
-            echo "❌ Could not find publishUrl in publishProfile.xml"
+          # publishProfile.xml is expected to exist (created earlier)
+          if [ ! -f publishProfile.xml ]; then
+            echo "❌ publishProfile.xml missing. Aborting."
             exit 1
           fi
 
-          # Normalize SCM host: some publishUrl values are like <app>.azurewebsites.net:443 or <app>-<hash>.scm.azurewebsites.net
+          # extract publishUrl, user and password (robust with sed)
+          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
+          if [ -z "$PUBLISH_URL_RAW" ]; then
+            echo "❌ publishUrl not found in publishProfile.xml"
+            exit 1
+          fi
+
           SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
           if echo "$SCM_HOST" | grep -q '\.scm\.'; then
-            KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+            KUDU_BASE="https://${SCM_HOST}"
           else
-            # replace .azurewebsites.net suffix with .scm.azurewebsites.net
-            KUDU_HOST=$(echo "$SCM_HOST" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
-            KUDU_API="https://${KUDU_HOST}/api/zipdeploy"
+            KUDU_BASE="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}"
           fi
-          echo "Kudu API: $KUDU_API"
 
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
 
           if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
-            echo "❌ Could not extract Kudu user/password from publishProfile.xml"
+            echo "❌ Could not extract KUDU user or password from publishProfile.xml"
             exit 1
           fi
 
+          echo "Kudu base: $KUDU_BASE (using publish profile credentials)"
+
+          echo "Current settings (partial):"
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE, .WEBSITE_NODE_DEFAULT_VERSION' || true
+
+          echo "Removing SCM_RUN_FROM_PACKAGE (if present)..."
+          HTTP_DEL=$(curl -s -o /tmp/delete_scm_resp.txt -w "%{http_code}" -u "${KUDU_USER}:${KUDU_PASS}" -X DELETE "${KUDU_BASE}/api/settings/SCM_RUN_FROM_PACKAGE" || true)
+          echo "DELETE HTTP code: $HTTP_DEL"
+          cat /tmp/delete_scm_resp.txt || true
+
+          echo "Setting WEBSITE_RUN_FROM_PACKAGE = 0 ..."
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" -X POST -H "Content-Type: application/json" \
+            -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
+            "${KUDU_BASE}/api/settings" | jq '.' || true
+
+          echo "Settings after change (partial):"
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE' || true
+
+          echo "Restarting app via Kudu..."
+          HTTP_RESTART=$(curl -s -o /tmp/restart_resp.txt -w "%{http_code}" -u "${KUDU_USER}:${KUDU_PASS}" -X POST "${KUDU_BASE}/api/app/restart" || true)
+          echo "Restart HTTP code: $HTTP_RESTART"
+          cat /tmp/restart_resp.txt || true
+
+      - name: Deploy via Kudu ZipDeploy (using publish profile credentials)
+        working-directory: api
+        env:
+          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f deploy_package.zip ]; then
+            echo "❌ deploy_package.zip not found, aborting deploy."
+            ls -la || true
+            exit 1
+          fi
+
+          # ensure publishProfile.xml exists
+          if [ ! -f publishProfile.xml ]; then
+            echo "❌ publishProfile.xml missing. Aborting."
+            exit 1
+          fi
+
+          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
+          SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
+          if echo "$SCM_HOST" | grep -q '\.scm\.'; then
+            KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+          else
+            KUDU_API="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}/api/zipdeploy"
+          fi
+          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
+          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
+
+          echo "Kudu API: $KUDU_API"
           echo "Deploying deploy_package.zip via Kudu..."
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt -u "${KUDU_USER}:${KUDU_PASS}" \
             -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip" || true)
@@ -192,6 +251,7 @@ jobs:
       - name: Remove Publish Profile file
         working-directory: api
         run: |
+          set -euo pipefail
           shred -u publishProfile.xml || rm -f publishProfile.xml || true
           echo "Removed publishProfile.xml" || true
 
