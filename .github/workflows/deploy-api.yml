@@ -1,6 +1,6 @@
-# Build + Publish Azure Functions using Publish Profile and Azure Functions Core Tools
-# Does NOT use RBAC / azure/login. Requires secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE
-name: Deploy API to Azure Functions (Publish Profile via Core Tools)
+# Build + Pack + ZipDeploy Azure Functions using Publish Profile credentials (Kudu)
+# Não usa RBAC / azure/login. Requer secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+name: Deploy API to Azure Functions (Pack + Kudu ZipDeploy)
 
 on:
   push:
@@ -83,6 +83,8 @@ jobs:
           echo "Saving publish profile to ./publishProfile.xml"
           printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
+          # show publishUrl (safe) for debug (no secrets)
+          grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | sed -E 's/publishUrl=\"([^\"]+)\"/PublishUrl: \1/'
 
       - name: Install Azure Functions Core Tools (v4)
         run: |
@@ -90,21 +92,62 @@ jobs:
           npm i -g azure-functions-core-tools@4 --unsafe-perm true
           echo "func version: $(func --version || true)"
 
-      - name: Install Azure CLI
-        run: |
-          echo "Installing Azure CLI..."
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-          echo "az version: $(az version || true)"
-
-      - name: Publish with Azure Functions Core Tools (using Publish Profile)
+      - name: Create deploy package with func pack
         working-directory: api
-        env:
-          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         run: |
           set -e
-          echo "Publishing to $AZURE_FUNCTIONAPP_NAME using publishProfile.xml"
-          func azure functionapp publish "$AZURE_FUNCTIONAPP_NAME" --publish-profile publishProfile.xml --verbose
-          echo "Publish finished."
+          echo "Packing the function app (func pack)..."
+          # func pack will generate function.json for v4 isolated model and create a zip for deploy
+          # output zip will be api/deploy_package.zip
+          func pack --output deploy_package.zip
+          echo "Pack result:"
+          ls -lh deploy_package.zip
+          echo "Contents (top 60 lines):"
+          unzip -l deploy_package.zip | head -60 || true
+
+      - name: Extract Kudu credentials from publishProfile and zipdeploy
+        working-directory: api
+        env:
+          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        run: |
+          set -e
+          echo "Extracting Kudu credentials from publishProfile.xml (no secret echo)..."
+
+          # publishUrl might have port like :443, remove port for https base
+          PUBLISH_URL_RAW=$(grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
+          if [ -z "$PUBLISH_URL_RAW" ]; then
+            echo "❌ Could not find publishUrl in publishProfile.xml"
+            exit 1
+          fi
+          # remove trailing :port if any
+          SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
+          KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+          echo "Kudu API: $KUDU_API"
+
+          KUDU_USER=$(grep -oP 'userName=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
+          KUDU_PASS=$(grep -oP 'userPWD=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
+
+          if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
+            echo "❌ Could not extract Kudu user/password from publishProfile.xml"
+            exit 1
+          fi
+
+          echo "Deploying deploy_package.zip via Kudu..."
+          # Perform zipdeploy
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt -u "${KUDU_USER}:${KUDU_PASS}" \
+            -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip")
+          echo "Kudu response HTTP code: $HTTP_CODE"
+          echo "Kudu response (first 200 lines):"
+          head -n 200 /tmp/zipdeploy_result.txt || true
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Zipdeploy succeeded"
+          else
+            echo "❌ Zipdeploy failed with HTTP code $HTTP_CODE"
+            echo "Full response:"
+            cat /tmp/zipdeploy_result.txt || true
+            exit 1
+          fi
 
       - name: Remove Publish Profile file
         working-directory: api
