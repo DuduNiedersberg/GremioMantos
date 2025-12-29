@@ -110,14 +110,23 @@ jobs:
           echo "func version: $(func --version || true)"
           echo ""
           echo "Attempting func pack to create deploy_package.zip..."
+          rm -rf deploy_package.zip || true
           if func pack --output deploy_package.zip; then
             echo "✅ func pack succeeded"
-            ls -lh deploy_package.zip
+            # func pack sometimes creates a directory; normalize below
+            if [ -d deploy_package.zip ]; then
+              echo "func pack created a directory named deploy_package.zip — will compress into a proper zip file"
+              zip -r deploy_package_tmp.zip deploy_package.zip/* || true
+              mv -f deploy_package_tmp.zip deploy_package.zip
+              rm -rf deploy_package.zip/* deploy_package.zip || true 2>/dev/null || true
+            fi
+            ls -lh deploy_package.zip || true
             echo "Contents (top 60 lines):"
             unzip -l deploy_package.zip | head -60 || true
           else
             echo "⚠️ func pack failed — creating manual deploy_package.zip as fallback"
             rm -f deploy_package.zip || true
+            rm -rf tmp_deploy || true
             mkdir -p tmp_deploy
             cp -v host.json tmp_deploy/ || true
             cp -v package.json tmp_deploy/ || true
@@ -133,9 +142,28 @@ jobs:
             cd tmp_deploy
             zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*" || true
             cd ..
+            rm -rf tmp_deploy || true
             ls -lh deploy_package.zip || true
             echo "Manual package contents (top 80):"
             unzip -l deploy_package.zip | head -80 || true
+          fi
+
+      - name: Normalize deploy_package.zip if it's a directory (safety)
+        working-directory: api
+        run: |
+          set -euo pipefail
+          if [ -d deploy_package.zip ]; then
+            echo "deploy_package.zip is a directory — creating proper zip file"
+            zip -r deploy_package_temp.zip deploy_package.zip/* || true
+            mv -f deploy_package_temp.zip deploy_package.zip
+            rm -rf deploy_package.zip/* || true
+          fi
+          if [ -f deploy_package.zip ]; then
+            echo "Final deploy_package.zip size: $(stat -c%s deploy_package.zip || stat -f%z deploy_package.zip)"
+          else
+            echo "❌ deploy_package.zip not found after packaging steps"
+            ls -la
+            exit 1
           fi
 
       - name: Ensure no Run-From-Package and restart (Kudu)
