@@ -1,5 +1,7 @@
-# (baseado no seu pasted.txt, com pequena modificação na etapa "Preparar pacote ZIP")
-# Ajuste apenas o que precisar — mantive todo o resto igual ao original.
+# Workflow: build + deploy Azure Functions (usando Publish Profile)
+# Requer: secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE adicionado ao repositório
+name: Deploy API to Azure Functions
+
 on:
   push:
     branches: [main]
@@ -12,368 +14,106 @@ env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
   NODE_VERSION: '20.x'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: production
-    
+
     steps:
-    - name: 'Checkout código'
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
 
-    - name: 'Validar secrets'
-      env:
-        TEST_USERNAME: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        TEST_PASSWORD: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
-      run: |
-        echo "🔐 Validando configuração..."
-        
-        echo "Debug info:"
-        echo "Username env var length: ${#TEST_USERNAME}"
-        echo "Password env var length: ${#TEST_PASSWORD}"
-        
-        if [ -z "$TEST_USERNAME" ]; then
-          echo "❌ AZURE_DEPLOY_USERNAME não configurado ou vazio!"
-          echo ""
-          echo "Verifique:"
-          echo "1. GitHub → Settings → Secrets and variables → Actions"
-          echo "2. Deve existir: AZURE_DEPLOY_USERNAME (exatamente assim, maiúsculo)"
-          echo "3. Se existir, delete e crie novamente"
-          exit 1
-        fi
-        
-        if [ -z "$TEST_PASSWORD" ]; then
-          echo "❌ AZURE_DEPLOY_PASSWORD não configurado ou vazio!"
-          echo ""
-          echo "Verifique:"
-          echo "1. GitHub → Settings → Secrets and variables → Actions"
-          echo "2. Deve existir: AZURE_DEPLOY_PASSWORD (exatamente assim, maiúsculo)"
-          echo "3. Se existir, delete e crie novamente"
-          exit 1
-        fi
-        
-        echo "✅ Secrets configurados corretamente"
-        echo "Username começa com: ${TEST_USERNAME:0:2}..."
-        echo "Password length: ${#TEST_PASSWORD} caracteres"
-
-    - name: 'Testar autenticação Kudu'
-      env:
-        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
-      run: |
-        echo "🧪 Testando autenticação..."
-        
-        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
-        
-        echo "Tentando conectar ao Kudu..."
-        echo "Username primeiro caractere: ${KUDU_USER:0:1}"
-        echo "Username length: ${#KUDU_USER}"
-        echo "Password length: ${#KUDU_PASS}"
-        
-        HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/test.txt \
-          --user "${KUDU_USER}:${KUDU_PASS}" \
-          "$KUDU_URL/api/settings")
-        
-        echo "HTTP Status: $HTTP_CODE"
-        
-        if [ "$HTTP_CODE" -eq 200 ]; then
-          echo "✅ Autenticação funcionando!"
-          echo "Settings retornados:"
-          cat /tmp/test.txt | head -20
-        elif [ "$HTTP_CODE" -eq 401 ]; then
-          echo "❌ Erro 401 - Credenciais inválidas!"
-          echo ""
-          echo "Response body:"
-          cat /tmp/test.txt
-          echo ""
-          echo "Tentando formato alternativo de autenticação..."
-          
-          AUTH_HEADER=$(echo -n "${KUDU_USER}:${KUDU_PASS}" | base64)
-          
-          HTTP_CODE2=$(curl -s -w "%{http_code}" -o /tmp/test2.txt \
-            -H "Authorization: Basic ${AUTH_HEADER}" \
-            "$KUDU_URL/api/settings")
-          
-          echo "Tentativa 2 - HTTP Status: $HTTP_CODE2"
-          
-          if [ "$HTTP_CODE2" -eq 200 ]; then
-            echo "✅ Funcionou com header manual!"
-            cat /tmp/test2.txt | head -20
-          else
-            echo "❌ Também falhou"
+      - name: Validate Publish Profile secret
+        env:
+          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        run: |
+          if [ -z "$PUBLISH_PROFILE" ]; then
+            echo "❌ AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret not found. Add it at Settings → Secrets and variables → Actions"
             exit 1
           fi
-        else
-          echo "⚠️ Status inesperado: $HTTP_CODE"
-          cat /tmp/test.txt
-          exit 1
-        fi
+          echo "✅ AZURE_FUNCTIONAPP_PUBLISH_PROFILE present (length: ${#PUBLISH_PROFILE})"
 
-    - name: 'Verificar configurações Azure Functions'
-      env:
-        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
-      run: |
-        echo "🔍 Verificando configurações da Function App..."
-        
-        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
-        
-        echo "1. Settings atuais:"
-        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
-          "$KUDU_URL/api/settings" | jq '.' 2>/dev/null || \
-          curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/settings"
-        
-        echo ""
-        echo "2. Versão do runtime:"
-        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
-          "$KUDU_URL/api/diagnostics/runtime" | jq '.' 2>/dev/null || \
-          curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/diagnostics/runtime"
-        
-        echo ""
-        echo "3. Verificar se /site/wwwroot existe e conteúdo:"
-        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
-          "$KUDU_URL/api/vfs/site/wwwroot/" | head -50
+      - name: Install dependencies & Build
+        working-directory: api
+        run: |
+          echo "📦 Installing dependencies"
+          npm ci
 
-    - name: 'Remover WEBSITE_RUN_FROM_PACKAGE'
-      env:
-        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
-      run: |
-        echo "🔧 Desabilitando WEBSITE_RUN_FROM_PACKAGE..."
-        
-        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
-        
-        echo "Setando WEBSITE_RUN_FROM_PACKAGE=0..."
-        curl -X POST \
-          --user "${KUDU_USER}:${KUDU_PASS}" \
-          -H "Content-Type: application/json" \
-          -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
-          "$KUDU_URL/api/settings"
-        
-        sleep 5
-        
-        echo "Tentando deletar WEBSITE_RUN_FROM_PACKAGE..."
-        curl -X DELETE \
-          --user "${KUDU_USER}:${KUDU_PASS}" \
-          "$KUDU_URL/api/settings/WEBSITE_RUN_FROM_PACKAGE"
-        
-        sleep 5
-        
-        echo "Verificando configuração atual..."
-        SETTINGS=$(curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/settings")
-        
-        if echo "$SETTINGS" | grep -q "WEBSITE_RUN_FROM_PACKAGE"; then
-          PACKAGE_VALUE=$(echo "$SETTINGS" | grep -o '"WEBSITE_RUN_FROM_PACKAGE":"[^"]*"' | cut -d'"' -f4)
-          echo "⚠️ WEBSITE_RUN_FROM_PACKAGE ainda existe com valor: $PACKAGE_VALUE"
-          
-          if [ "$PACKAGE_VALUE" = "0" ]; then
-            echo "✅ Mas está desabilitado (valor = 0), pode prosseguir"
+          echo "🔨 Building TypeScript"
+          npm run build
+
+          echo "✅ Build finished. dist/ contents:"
+          ls -la dist || true
+
+      - name: Prune devDependencies to make package lighter
+        working-directory: api
+        run: |
+          echo "Pruning devDependencies (production only)..."
+          npm prune --production || true
+          echo "node_modules size:"
+          du -sh node_modules || true
+
+      - name: Prepare package check
+        working-directory: api
+        run: |
+          echo "Verifying host.json exists in api:"
+          if [ -f host.json ]; then
+            echo "✅ host.json found"
           else
-            echo "⚠️ Tentando forçar valor 0 novamente..."
-            curl -X POST \
-              --user "${KUDU_USER}:${KUDU_PASS}" \
-              -H "Content-Type: application/json" \
-              -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
-              "$KUDU_URL/api/settings"
+            echo "❌ host.json not found at api/host.json — deployment may fail"
+            ls -la
+            exit 1
           fi
-        else
-          echo "✅ WEBSITE_RUN_FROM_PACKAGE não existe"
-        fi
 
-    - name: 'Build da aplicação'
-      working-directory: api
-      run: |
-        echo "📦 Instalando dependências..."
-        npm ci
-        
-        echo "🔨 Compilando TypeScript..."
-        npm run build
-        
-        echo "✅ Build concluído!"
-        
-        echo ""
-        echo "Verificando estrutura de dist após build:"
-        ls -la dist/
-
-    - name: 'Preparar pacote ZIP'
-      working-directory: api
-      run: |
-        echo "📦 Criando pacote de deploy..."
-        
-        echo "Estrutura do projeto:"
-        ls -la
-        
-        echo ""
-        echo "Conteúdo de dist/:"
-        ls -la dist/
-        
-        echo ""
-        echo "Removendo dev dependencies..."
-        npm prune --production
-        
-        echo ""
-        echo "Preparando estrutura de deploy..."
-        mkdir -p deploy_package
-        
-        # Copiar host.json e package files para raiz
-        cp host.json deploy_package/ || echo "host.json não encontrado aqui — verifique path"
-        cp package.json deploy_package/
-        cp package-lock.json deploy_package/
-        
-        # IMPORTANTE: Copiar CONTEÚDO de dist (não a pasta) para raiz
-        echo "Copiando funções compiladas (dist/*) para deploy_package..."
-        cp -r dist/* deploy_package/ || echo "dist vazio ou não existe"
-        
-        #Garantir que function.json estejam no pacote (tenta em dist, senão no source)
-        echo "Garantindo function.json no pacote (se existirem)..."
-        if find dist -name 'function.json' | grep -q .; then
-          echo "Copiando function.json a partir de dist"
-          find dist -name 'function.json' -exec cp --parents '{}' deploy_package/ \;
-        else
-          echo "Nenhum function.json em dist — procurando no source e copiando"
-          find . -name 'function.json' -exec cp --parents '{}' deploy_package/ \;
-        fi
-        
-        # Copiar node_modules (após prune --production)
-        echo "Copiando node_modules..."
-        cp -r node_modules deploy_package/ || echo "node_modules não encontrado — verifique npm prune"
-        
-        echo ""
-        echo "Estrutura final antes do ZIP:"
-        cd deploy_package
-        ls -la
-        
-        echo ""
-        echo "Verificando function.json existentes:"
-        find . -name "function.json" -type f || echo "Nenhum function.json encontrado em deploy_package"
-        
-        echo ""
-        echo "Criando ZIP..."
-        # Excluir arquivos de teste em node_modules para reduzir o pacote
-        zip -r ../deploy.zip . \
-          -x "*.git*" \
-          -x "*.ts" \
-          -x "tsconfig.json" \
-          -x "*.test.js" \
-          -x "tests/*" \
-          -x ".env*" \
-          -x "node_modules/@types/*" \
-          -x "node_modules/*/test/*" \
-          -x "node_modules/*/tests/*"
-        
-        cd ..
-        
-        echo ""
-        echo "✅ ZIP criado:"
-        ls -lh deploy.zip
-        
-        echo ""
-        echo "📋 Primeiros 100 arquivos do ZIP:"
-        unzip -l deploy.zip | head -100
-        
-        echo ""
-        echo "🔍 Verificações importantes:"
-        echo "1. host.json na raiz:"
-        unzip -l deploy.zip | grep "^\s*[0-9].*host\.json$" || echo "   ❌ NÃO ENCONTRADO NA RAIZ"
-        
-        echo ""
-        echo "2. function.json files:"
-        unzip -l deploy.zip | grep "function\.json$" || echo "   ❌ NENHUM ENCONTRADO"
-        
-        echo ""
-        echo "3. Estrutura das funções:"
-        unzip -l deploy.zip | grep "function\.json$"
-
-    - name: 'Debug: Inspecionar ZIP completo'
-      working-directory: api
-      run: |
-        echo "🔍 DIAGNÓSTICO COMPLETO DO ZIP"
-        echo "================================"
-        
-        mkdir -p zip_check
-        unzip -q deploy.zip -d zip_check
-        
-        cd zip_check
-        
-        echo ""
-        echo "1️⃣ Arquivos na RAIZ do ZIP:"
-        ls -la
-        
-        echo ""
-        echo "2️⃣ host.json existe na raiz?"
-        if [ -f "host.json" ]; then
-          echo "✅ SIM"
-          echo "Conteúdo do host.json:"
-          cat host.json
-        else
-          echo "❌ NÃO - ISSO VAI CAUSAR ERRO 400!"
-          echo "Procurando host.json em subpastas:"
-          find . -name "host.json" -type f
-        fi
-        
-        echo ""
-        echo "3️⃣ Pastas de funções encontradas (diretórios na raiz, exceto node_modules):"
-        find . -maxdepth 1 -type d ! -name "." ! -name ".." ! -name "node_modules" | sort
-        
-        echo ""
-        echo "4️⃣ Todos os function.json encontrados:"
-        find . -name "function.json" -type f | while read file; do
           echo ""
-          echo "📄 $file"
-          echo "Conteúdo:"
-          cat "$file"
-        done
-        
-        echo ""
-        echo "5️⃣ package.json na raiz?"
-        if [ -f "package.json" ]; then
-          echo "✅ SIM"
-          echo "Dependências principais:"
-          cat package.json | grep -A 5 '"dependencies"' || echo "Não encontrado"
-        else
-          echo "❌ NÃO"
-        fi
-        
-        echo ""
-        echo "6️⃣ node_modules existe?"
-        if [ -d "node_modules" ]; then
-          echo "✅ SIM"
-          echo "Tamanho: $(du -sh node_modules 2>/dev/null | cut -f1 || echo 'N/A')"
-          echo "Principais pacotes:"
-          ls node_modules | head -20
-        else
-          echo "❌ NÃO"
-        fi
-        
-        echo ""
-        echo "7️⃣ Estrutura completa (até 3 níveis):"
-        find . -maxdepth 3 -type f ! -path "*/node_modules/*" | head -50
+          echo "Listing top-level files in api/:"
+          ls -la
 
-    - name: 'Deploy via Múltiplos Métodos Kudu'
-      working-directory: api
-      env:
-        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
-        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
-      run: |
-        echo "🚀 Tentando deploy com múltiplos métodos..."
-        echo "=========================================="
-        
-        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
-        
-        if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
-          echo "❌ ERRO: Credenciais vazias!"
-          exit 1
-        fi
-        
-        FILE_SIZE=$(stat -c%s deploy.zip 2>/dev/null || stat -f%z deploy.zip 2>/dev/null)
-        echo "Tamanho do arquivo: $FILE_SIZE bytes ($(($FILE_SIZE / 1024 / 1024)) MB)"
-        echo ""
-        
-        # (o resto do arquivo não foi alterado)
-        echo "MÉTODOS DE DEPLOY continuam iguais..."
-        exit 0
+      - name: Deploy to Azure Functions (via Publish Profile)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: './api'
+        env:
+          AZURE_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+      - name: Wait for app to warm up
+        run: |
+          echo "Waiting a few seconds for the Function App to warm up..."
+          sleep 8
+
+      - name: Health check (optional)
+        run: |
+          APP_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
+          echo "Checking $APP_URL"
+          # Try 3 times with backoff
+          n=0
+          until [ $n -ge 3 ]
+          do
+            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$APP_URL" || echo "000")
+            echo "Attempt $((n+1)): HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health endpoint OK:"
+              cat /tmp/health.txt | head -n 40
+              break
+            fi
+            n=$((n+1))
+            sleep $((n * 3))
+          done
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️ Health check failed (last HTTP code: $HTTP_CODE). Check Function App logs in Azure Portal."
+            # do not fail the job here to avoid masking useful deployment logs; remove `exit 0` below if you want CI to fail on health check
+            exit 0
+          fi
