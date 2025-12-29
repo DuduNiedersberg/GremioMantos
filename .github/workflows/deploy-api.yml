@@ -1,4 +1,4 @@
-name: Deploy Azure Functions API (Kudu Direto)
+name: Deploy Azure Functions API (Kudu Direto - TESTE)
 
 on:
   push:
@@ -75,7 +75,6 @@ jobs:
         echo "Username length: ${#KUDU_USER}"
         echo "Password length: ${#KUDU_PASS}"
         
-        # Teste com --user em vez de -u
         HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/test.txt \
           --user "${KUDU_USER}:${KUDU_PASS}" \
           "$KUDU_URL/api/settings")
@@ -94,7 +93,6 @@ jobs:
           echo ""
           echo "Tentando formato alternativo de autenticação..."
           
-          # Tentar com base64 manual
           AUTH_HEADER=$(echo -n "${KUDU_USER}:${KUDU_PASS}" | base64)
           
           HTTP_CODE2=$(curl -s -w "%{http_code}" -o /tmp/test2.txt \
@@ -108,12 +106,6 @@ jobs:
             cat /tmp/test2.txt | head -20
           else
             echo "❌ Também falhou"
-            echo ""
-            echo "Debugging:"
-            echo "1. Confirme que copiou username E password sem espaços extras"
-            echo "2. Username esperado deve começar com \$ ou conter \$"
-            echo "3. Tente resetar as credenciais no Azure:"
-            echo "   az functionapp deployment user set --user-name <novo-nome> --password <nova-senha>"
             exit 1
           fi
         else
@@ -121,6 +113,31 @@ jobs:
           cat /tmp/test.txt
           exit 1
         fi
+
+    - name: 'Verificar configurações Azure Functions'
+      env:
+        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
+        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
+      run: |
+        echo "🔍 Verificando configurações da Function App..."
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        echo "1. Settings atuais:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/settings" | jq '.' 2>/dev/null || \
+          curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/settings"
+        
+        echo ""
+        echo "2. Versão do runtime:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/diagnostics/runtime" | jq '.' 2>/dev/null || \
+          curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/diagnostics/runtime"
+        
+        echo ""
+        echo "3. Verificar se /site/wwwroot existe e conteúdo:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/vfs/site/wwwroot/" | head -50
 
     - name: 'Remover WEBSITE_RUN_FROM_PACKAGE'
       env:
@@ -131,7 +148,6 @@ jobs:
         
         KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
         
-        # Primeiro, setar como 0 (desabilitar)
         echo "Setando WEBSITE_RUN_FROM_PACKAGE=0..."
         curl -X POST \
           --user "${KUDU_USER}:${KUDU_PASS}" \
@@ -141,7 +157,6 @@ jobs:
         
         sleep 5
         
-        # Depois tentar deletar
         echo "Tentando deletar WEBSITE_RUN_FROM_PACKAGE..."
         curl -X DELETE \
           --user "${KUDU_USER}:${KUDU_PASS}" \
@@ -149,7 +164,6 @@ jobs:
         
         sleep 5
         
-        # Verificar
         echo "Verificando configuração atual..."
         SETTINGS=$(curl -s --user "${KUDU_USER}:${KUDU_PASS}" "$KUDU_URL/api/settings")
         
@@ -181,13 +195,16 @@ jobs:
         npm run build
         
         echo "✅ Build concluído!"
+        
+        echo ""
+        echo "Verificando estrutura de dist após build:"
+        ls -la dist/
 
     - name: 'Preparar pacote ZIP'
       working-directory: api
       run: |
         echo "📦 Criando pacote de deploy..."
         
-        # Verificar estrutura antes
         echo "Estrutura do projeto:"
         ls -la
         
@@ -195,12 +212,10 @@ jobs:
         echo "Conteúdo de dist/:"
         ls -la dist/
         
-        # Remover dev dependencies
         echo ""
         echo "Removendo dev dependencies..."
         npm prune --production
         
-        # Criar diretório temporário para estrutura correta
         echo ""
         echo "Preparando estrutura de deploy..."
         mkdir -p deploy_package
@@ -211,7 +226,6 @@ jobs:
         cp package-lock.json deploy_package/
         
         # IMPORTANTE: Copiar CONTEÚDO de dist (não a pasta) para raiz
-        # Isso garante que as funções fiquem na raiz do ZIP
         echo "Copiando funções compiladas..."
         cp -r dist/* deploy_package/
         
@@ -219,17 +233,15 @@ jobs:
         echo "Copiando node_modules..."
         cp -r node_modules deploy_package/
         
-        # Verificar estrutura antes de zipar
         echo ""
         echo "Estrutura final antes do ZIP:"
         cd deploy_package
         ls -la
         
         echo ""
-        echo "Verificando se existem function.json:"
+        echo "Verificando function.json existentes:"
         find . -name "function.json" -type f
         
-        # Criar ZIP
         echo ""
         echo "Criando ZIP..."
         zip -r ../deploy.zip . \
@@ -248,19 +260,21 @@ jobs:
         ls -lh deploy.zip
         
         echo ""
-        echo "📋 Primeiros 50 arquivos do ZIP:"
-        unzip -l deploy.zip | head -50
+        echo "📋 Primeiros 100 arquivos do ZIP:"
+        unzip -l deploy.zip | head -100
         
         echo ""
         echo "🔍 Verificações importantes:"
         echo "1. host.json na raiz:"
-        unzip -l deploy.zip | grep "^.*host\.json$" || echo "   ❌ NÃO ENCONTRADO NA RAIZ"
+        unzip -l deploy.zip | grep "^\s*[0-9].*host\.json$" || echo "   ❌ NÃO ENCONTRADO NA RAIZ"
         
+        echo ""
         echo "2. function.json files:"
         unzip -l deploy.zip | grep "function\.json$" || echo "   ❌ NENHUM ENCONTRADO"
         
-        echo "3. Estrutura das funções (devem estar como: NomeFuncao/function.json):"
-        unzip -l deploy.zip | grep "function\.json$" | head -10
+        echo ""
+        echo "3. Estrutura das funções:"
+        unzip -l deploy.zip | grep "function\.json$"
 
     - name: 'Debug: Inspecionar ZIP completo'
       working-directory: api
@@ -268,7 +282,6 @@ jobs:
         echo "🔍 DIAGNÓSTICO COMPLETO DO ZIP"
         echo "================================"
         
-        # Extrair para inspeção
         mkdir -p zip_check
         unzip -q deploy.zip -d zip_check
         
@@ -282,14 +295,16 @@ jobs:
         echo "2️⃣ host.json existe na raiz?"
         if [ -f "host.json" ]; then
           echo "✅ SIM"
-          echo "Conteúdo:"
+          echo "Conteúdo do host.json:"
           cat host.json
         else
           echo "❌ NÃO - ISSO VAI CAUSAR ERRO 400!"
+          echo "Procurando host.json em subpastas:"
+          find . -name "host.json" -type f
         fi
         
         echo ""
-        echo "3️⃣ Pastas de funções encontradas:"
+        echo "3️⃣ Pastas de funções encontradas (diretórios na raiz, exceto node_modules):"
         find . -maxdepth 1 -type d ! -name "." ! -name ".." ! -name "node_modules" | sort
         
         echo ""
@@ -297,13 +312,16 @@ jobs:
         find . -name "function.json" -type f | while read file; do
           echo ""
           echo "📄 $file"
-          head -20 "$file"
+          echo "Conteúdo:"
+          cat "$file"
         done
         
         echo ""
         echo "5️⃣ package.json na raiz?"
         if [ -f "package.json" ]; then
           echo "✅ SIM"
+          echo "Dependências principais:"
+          cat package.json | grep -A 5 '"dependencies"' || echo "Não encontrado"
         else
           echo "❌ NÃO"
         fi
@@ -313,81 +331,279 @@ jobs:
         if [ -d "node_modules" ]; then
           echo "✅ SIM"
           echo "Tamanho: $(du -sh node_modules 2>/dev/null | cut -f1 || echo 'N/A')"
+          echo "Principais pacotes:"
+          ls node_modules | head -20
         else
           echo "❌ NÃO"
         fi
+        
+        echo ""
+        echo "7️⃣ Estrutura completa (até 3 níveis):"
+        find . -maxdepth 3 -type f ! -path "*/node_modules/*" | head -50
 
-    - name: 'Deploy via Kudu ZipDeploy'
+    - name: 'Deploy via Múltiplos Métodos Kudu'
       working-directory: api
       env:
         KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
         KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
       run: |
-        echo "🚀 Fazendo deploy..."
-        
-        # DEBUG: Verificar se variáveis estão vazias
-        if [ -z "$KUDU_USER" ]; then
-          echo "❌ ERRO: KUDU_USER está vazio!"
-          exit 1
-        fi
-        
-        if [ -z "$KUDU_PASS" ]; then
-          echo "❌ ERRO: KUDU_PASS está vazio!"
-          exit 1
-        fi
-        
-        echo "✅ Credenciais OK"
-        echo "Username length: ${#KUDU_USER}"
-        echo "Password length: ${#KUDU_PASS}"
+        echo "🚀 Tentando deploy com múltiplos métodos..."
+        echo "=========================================="
         
         KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
         
-        # Verificar tamanho do arquivo
-        FILE_SIZE=$(stat -f%z deploy.zip 2>/dev/null || stat -c%s deploy.zip 2>/dev/null)
-        echo "Tamanho do arquivo: $FILE_SIZE bytes ($(($FILE_SIZE / 1024 / 1024)) MB)"
+        if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
+          echo "❌ ERRO: Credenciais vazias!"
+          exit 1
+        fi
         
-        # Deploy com mais informações de debug
-        echo "Iniciando upload..."
+        FILE_SIZE=$(stat -c%s deploy.zip 2>/dev/null || stat -f%z deploy.zip 2>/dev/null)
+        echo "Tamanho do arquivo: $FILE_SIZE bytes ($(($FILE_SIZE / 1024 / 1024)) MB)"
+        echo ""
+        
+        # ============================================
+        # MÉTODO 1: /api/zip/site/wwwroot (VFS ZIP)
+        # ============================================
+        echo "=========================================="
+        echo "MÉTODO 1: VFS ZIP Upload (/api/zip/site/wwwroot)"
+        echo "=========================================="
+        
+        HTTP_CODE=$(curl -X PUT \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          --data-binary @deploy.zip \
+          -H "Content-Type: application/zip" \
+          -w "%{http_code}" \
+          -o response1.txt \
+          --max-time 600 \
+          "$KUDU_URL/api/zip/site/wwwroot/")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ -f response1.txt ]; then
+          echo "Response:"
+          cat response1.txt
+        fi
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+          echo ""
+          echo "✅ MÉTODO 1 SUCESSO!"
+          
+          echo ""
+          echo "Sincronizando triggers..."
+          curl -X POST \
+            --user "${KUDU_USER}:${KUDU_PASS}" \
+            "$KUDU_URL/api/functions/synctriggers"
+          
+          echo ""
+          echo "Aguardando 10s para aplicar mudanças..."
+          sleep 10
+          
+          echo ""
+          echo "✅ Deploy concluído via Método 1!"
+          echo "DEPLOY_METHOD=VFS_ZIP" >> $GITHUB_ENV
+          exit 0
+        fi
+        
+        echo "❌ Método 1 falhou"
+        echo ""
+        
+        # ============================================
+        # MÉTODO 2: /api/zipdeploy tradicional
+        # ============================================
+        echo "=========================================="
+        echo "MÉTODO 2: ZipDeploy Tradicional (/api/zipdeploy)"
+        echo "=========================================="
+        
         HTTP_CODE=$(curl -X POST \
           --user "${KUDU_USER}:${KUDU_PASS}" \
           --data-binary @deploy.zip \
           -H "Content-Type: application/octet-stream" \
           -w "%{http_code}" \
-          -o response.txt \
+          -o response2.txt \
           --max-time 600 \
           "$KUDU_URL/api/zipdeploy")
         
-        echo ""
         echo "HTTP Status: $HTTP_CODE"
         
-        if [ -f response.txt ]; then
-          echo "Response body:"
-          cat response.txt
-          echo ""
+        if [ -f response2.txt ]; then
+          echo "Response:"
+          cat response2.txt
         fi
         
-        if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
-          echo "✅ Deploy iniciado com sucesso!"
-        elif [ "$HTTP_CODE" -eq 400 ]; then
-          echo "❌ Erro 400 - Bad Request"
-          echo "Possíveis causas:"
-          echo "1. Estrutura do ZIP incorreta"
-          echo "2. host.json ausente ou inválido"
-          echo "3. Funções mal configuradas"
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
           echo ""
-          echo "Tentando obter mais detalhes do erro..."
-          
-          # Tentar pegar logs
-          curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
-            "$KUDU_URL/api/logs/docker" | tail -50
-          
-          exit 1
-        else
-          echo "❌ Deploy falhou com código $HTTP_CODE"
-          exit 1
+          echo "✅ MÉTODO 2 SUCESSO!"
+          echo "DEPLOY_METHOD=ZIPDEPLOY" >> $GITHUB_ENV
+          exit 0
         fi
+        
+        echo "❌ Método 2 falhou"
+        echo ""
+        
+        # ============================================
+        # MÉTODO 3: /api/zipdeploy com async
+        # ============================================
+        echo "=========================================="
+        echo "MÉTODO 3: ZipDeploy Async"
+        echo "=========================================="
+        
+        HTTP_CODE=$(curl -X POST \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          --data-binary @deploy.zip \
+          -H "Content-Type: application/octet-stream" \
+          -w "%{http_code}" \
+          -o response3.txt \
+          --max-time 600 \
+          "$KUDU_URL/api/zipdeploy?isAsync=true")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ -f response3.txt ]; then
+          echo "Response:"
+          cat response3.txt
+        fi
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+          echo ""
+          echo "✅ MÉTODO 3 SUCESSO!"
+          echo "DEPLOY_METHOD=ZIPDEPLOY_ASYNC" >> $GITHUB_ENV
+          exit 0
+        fi
+        
+        echo "❌ Método 3 falhou"
+        echo ""
+        
+        # ============================================
+        # MÉTODO 4: /api/publish
+        # ============================================
+        echo "=========================================="
+        echo "MÉTODO 4: Publish API"
+        echo "=========================================="
+        
+        HTTP_CODE=$(curl -X PUT \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          --data-binary @deploy.zip \
+          -H "Content-Type: application/zip" \
+          -w "%{http_code}" \
+          -o response4.txt \
+          --max-time 600 \
+          "$KUDU_URL/api/publish?type=zip")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ -f response4.txt ]; then
+          echo "Response:"
+          cat response4.txt
+        fi
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+          echo ""
+          echo "✅ MÉTODO 4 SUCESSO!"
+          echo "DEPLOY_METHOD=PUBLISH" >> $GITHUB_ENV
+          exit 0
+        fi
+        
+        echo "❌ Método 4 falhou"
+        echo ""
+        
+        # ============================================
+        # MÉTODO 5: Upload manual via VFS
+        # ============================================
+        echo "=========================================="
+        echo "MÉTODO 5: Upload Manual via VFS"
+        echo "=========================================="
+        
+        echo "Limpando wwwroot..."
+        curl -X DELETE \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/vfs/site/wwwroot/" \
+          -H "If-Match: *"
+        
+        sleep 3
+        
+        echo "Fazendo upload..."
+        HTTP_CODE=$(curl -X PUT \
+          --user "${KUDU_USER}:${KUDU_PASS}" \
+          --data-binary @deploy.zip \
+          -H "Content-Type: application/zip" \
+          -w "%{http_code}" \
+          -o response5.txt \
+          "$KUDU_URL/api/zip/site/wwwroot")
+        
+        echo "HTTP Status: $HTTP_CODE"
+        
+        if [ -f response5.txt ]; then
+          echo "Response:"
+          cat response5.txt
+        fi
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+          echo ""
+          echo "✅ MÉTODO 5 SUCESSO!"
+          
+          curl -X POST \
+            --user "${KUDU_USER}:${KUDU_PASS}" \
+            "$KUDU_URL/api/functions/synctriggers"
+          
+          echo "DEPLOY_METHOD=VFS_MANUAL" >> $GITHUB_ENV
+          exit 0
+        fi
+        
+        echo "❌ Método 5 falhou"
+        echo ""
+        
+        # ============================================
+        # TODOS FALHARAM - DIAGNÓSTICO
+        # ============================================
+        echo "=========================================="
+        echo "❌ TODOS OS MÉTODOS FALHARAM!"
+        echo "=========================================="
+        echo ""
+        
+        echo "Tentando obter logs de erro..."
+        echo ""
+        echo "--- Docker Logs ---"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/logs/docker" 2>/dev/null | tail -100 || echo "Logs não disponíveis"
+        
+        echo ""
+        echo "--- Deployment Logs ---"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/deployments" 2>/dev/null | head -100 || echo "Deployments não disponíveis"
+        
+        echo ""
+        echo "--- App Settings ---"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/settings" 2>/dev/null | grep -E "(FUNCTIONS_|WEBSITE_|SCM_)" || echo "Settings não disponíveis"
+        
+        exit 1
+
+    - name: 'Verificar arquivos deployados'
+      if: success()
+      env:
+        KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
+        KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
+      run: |
+        echo "🔍 Verificando arquivos deployados..."
+        
+        KUDU_URL="https://gremiomantosapi-d6gshveqc4fee0c2.scm.brazilsouth-01.azurewebsites.net"
+        
+        echo "Conteúdo de /site/wwwroot:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/vfs/site/wwwroot/" | head -100
+        
+        echo ""
+        echo "Verificando se host.json existe:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/vfs/site/wwwroot/host.json"
+        
+        echo ""
+        echo "Listando funções:"
+        curl -s --user "${KUDU_USER}:${KUDU_PASS}" \
+          "$KUDU_URL/api/functions"
 
     - name: 'Verificar status do deployment'
+      if: success()
       env:
         KUDU_USER: ${{ secrets.AZURE_DEPLOY_USERNAME }}
         KUDU_PASS: ${{ secrets.AZURE_DEPLOY_PASSWORD }}
@@ -416,7 +632,7 @@ jobs:
             break
           elif [ "$STATUS" = "3" ] || [ "$STATUS" = "Failed" ]; then
             echo "❌ Deployment falhou!"
-            echo "$LATEST" | jq '.'
+            echo "$LATEST" | jq '.' 2>/dev/null || echo "$LATEST"
             exit 1
           fi
           
@@ -424,11 +640,13 @@ jobs:
         done
 
     - name: 'Aguardar cold start'
+      if: success()
       run: |
         echo "⏳ Aguardando inicialização da Function App (90s)..."
         sleep 90
 
     - name: 'Health Check'
+      if: success()
       run: |
         echo "🔍 Testando endpoints..."
         
@@ -451,6 +669,7 @@ jobs:
             echo ""
             echo "🎉 Deploy concluído com sucesso!"
             echo "🔗 Function App: $BASE_URL"
+            echo "📊 Método usado: ${DEPLOY_METHOD:-UNKNOWN}"
             exit 0
           elif [ "$HTTP_CODE" != "error" ]; then
             echo "Body: $BODY"
@@ -465,3 +684,4 @@ jobs:
         echo ""
         echo "⚠️ Health check não passou após 10 tentativas"
         echo "Verifique manualmente: $BASE_URL/api/health"
+        echo "Método de deploy usado: ${DEPLOY_METHOD:-UNKNOWN}"
