@@ -89,10 +89,10 @@ jobs:
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
           sed -n 's/.*publishUrl="\([^"]*\)".*/PublishUrl: \1/p' publishProfile.xml | head -1 || true
 
-      - name: Install system packages (zip)
+      - name: Install system packages (zip, jq)
         run: |
           set -euo pipefail
-          echo "Installing zip utility (required for packaging fallback)..."
+          echo "Installing zip/unzip/jq (required for packaging and debug)..."
           sudo apt-get update -y
           sudo apt-get install -y zip unzip jq || true
           echo "zip version: $(zip -v 2>/dev/null | head -n 1 || true)"
@@ -122,17 +122,16 @@ jobs:
           rm -f deploy_package.zip || true
           rm -rf deploy_package || true
           rm -rf tmp_deploy || true
+          rm -f func_pack.log || true
 
           echo "Attempting func pack to create deploy_package or deploy_package.zip..."
           if func pack --output deploy_package 2>&1 | tee func_pack.log; then
             echo "✅ func pack succeeded or created deploy_package directory"
-            # if created directory deploy_package, compress it
             if [ -d deploy_package ]; then
               echo "Compressing deploy_package directory -> deploy_package.zip"
               (cd deploy_package && zip -r ../deploy_package.zip .) || true
               echo "Created deploy_package.zip from deploy_package directory"
               ls -lh deploy_package.zip || true
-              # keep deploy_package.zip and remove directory
               rm -rf deploy_package || true
             elif [ -f deploy_package.zip ]; then
               echo "func pack produced deploy_package.zip directly"
@@ -174,7 +173,7 @@ jobs:
             exit 1
           fi
 
-      - name: Ensure no Run-From-Package and restart (Kudu)
+      - name: Ensure no Run-From-Package, disable remote build and restart (Kudu)
         working-directory: api
         env:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
@@ -186,18 +185,32 @@ jobs:
             exit 1
           fi
 
+          # extract publishUrl robustly and strip any scheme/path
           PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           if [ -z "$PUBLISH_URL_RAW" ]; then
             echo "❌ publishUrl not found in publishProfile.xml"
             exit 1
           fi
 
-          SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
-          if echo "$SCM_HOST" | grep -q '\.scm\.'; then
-            KUDU_BASE="https://${SCM_HOST}"
+          # remove scheme (ftp://, ftps://, https://, http://) and trailing path, keep host[:port]
+          HOST_STRIPPED=$(echo "$PUBLISH_URL_RAW" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
+          # remove credentials if present (user:pass@host)
+          HOST_STRIPPED=$(echo "$HOST_STRIPPED" | awk -F'@' '{print $NF}')
+
+          echo "publishUrl raw: $PUBLISH_URL_RAW"
+          echo "host stripped: $HOST_STRIPPED"
+
+          # derive KUDU host
+          if echo "$HOST_STRIPPED" | grep -q '\.scm\.'; then
+            KUDU_HOST="$HOST_STRIPPED"
+          elif echo "$HOST_STRIPPED" | grep -q '\.azurewebsites\.net$'; then
+            KUDU_HOST=$(echo "$HOST_STRIPPED" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
           else
-            KUDU_BASE="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}"
+            KUDU_HOST="$HOST_STRIPPED"
           fi
+
+          KUDU_BASE="https://${KUDU_HOST}"
+          echo "Kudu base: $KUDU_BASE"
 
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
@@ -207,26 +220,23 @@ jobs:
             exit 1
           fi
 
-          echo "Kudu base: $KUDU_BASE (using publish profile credentials)"
           echo "Current settings (partial):"
-          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE, .WEBSITE_NODE_DEFAULT_VERSION' || true
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE, .SCM_DO_BUILD_DURING_DEPLOYMENT, .ENABLE_ORYX_BUILD, .WEBSITE_NODE_DEFAULT_VERSION' || true
 
           echo "Removing SCM_RUN_FROM_PACKAGE (if present)..."
-          HTTP_DEL=$(curl -s -o /tmp/delete_scm_resp.txt -w "%{http_code}" -u "${KUDU_USER}:${KUDU_PASS}" -X DELETE "${KUDU_BASE}/api/settings/SCM_RUN_FROM_PACKAGE" || true)
-          echo "DELETE HTTP code: $HTTP_DEL"
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" -X DELETE "${KUDU_BASE}/api/settings/SCM_RUN_FROM_PACKAGE" -o /tmp/delete_scm_resp.txt -w "%{http_code}" || true
           cat /tmp/delete_scm_resp.txt || true
 
-          echo "Setting WEBSITE_RUN_FROM_PACKAGE = 0 ..."
+          echo "Setting WEBSITE_RUN_FROM_PACKAGE = 0 and disabling remote build & Oryx..."
           curl -s -u "${KUDU_USER}:${KUDU_PASS}" -X POST -H "Content-Type: application/json" \
-            -d '{"WEBSITE_RUN_FROM_PACKAGE":"0"}' \
+            -d '{"WEBSITE_RUN_FROM_PACKAGE":"0","SCM_DO_BUILD_DURING_DEPLOYMENT":"false","ENABLE_ORYX_BUILD":"false"}' \
             "${KUDU_BASE}/api/settings" | jq '.' || true
 
           echo "Settings after change (partial):"
-          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE' || true
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | jq '.SCM_RUN_FROM_PACKAGE, .WEBSITE_RUN_FROM_PACKAGE, .SCM_DO_BUILD_DURING_DEPLOYMENT, .ENABLE_ORYX_BUILD' || true
 
           echo "Restarting app via Kudu..."
-          HTTP_RESTART=$(curl -s -o /tmp/restart_resp.txt -w "%{http_code}" -u "${KUDU_USER}:${KUDU_PASS}" -X POST "${KUDU_BASE}/api/app/restart" || true)
-          echo "Restart HTTP code: $HTTP_RESTART"
+          curl -s -u "${KUDU_USER}:${KUDU_PASS}" -X POST "${KUDU_BASE}/api/app/restart" -o /tmp/restart_resp.txt -w "%{http_code}" || true
           cat /tmp/restart_resp.txt || true
 
       - name: Deploy via Kudu ZipDeploy (using publish profile credentials)
@@ -247,13 +257,20 @@ jobs:
             exit 1
           fi
 
+          # extract publishUrl robustly and strip any scheme/path
           PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-          SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
-          if echo "$SCM_HOST" | grep -q '\.scm\.'; then
-            KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+          HOST_STRIPPED=$(echo "$PUBLISH_URL_RAW" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
+          HOST_STRIPPED=$(echo "$HOST_STRIPPED" | awk -F'@' '{print $NF}')
+
+          if echo "$HOST_STRIPPED" | grep -q '\.scm\.'; then
+            KUDU_HOST="$HOST_STRIPPED"
+          elif echo "$HOST_STRIPPED" | grep -q '\.azurewebsites\.net$'; then
+            KUDU_HOST=$(echo "$HOST_STRIPPED" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
           else
-            KUDU_API="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}/api/zipdeploy"
+            KUDU_HOST="$HOST_STRIPPED"
           fi
+
+          KUDU_API="https://${KUDU_HOST}/api/zipdeploy"
           KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
 
