@@ -83,7 +83,8 @@ jobs:
           echo "Saving publish profile to ./publishProfile.xml"
           printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
-          grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | sed -E 's/publishUrl=\"([^\"]+)\"/PublishUrl: \1/' || true
+          # show publishUrl (safe) for debug (no secrets)
+          sed -n 's/.*publishUrl="\([^"]*\)".*/PublishUrl: \1/p' publishProfile.xml | head -1 || true
 
       - name: Install Azure Functions Core Tools (v4)
         run: |
@@ -140,23 +141,26 @@ jobs:
           set -e
           echo "Extracting Kudu credentials from publishProfile.xml"
 
-          PUBLISH_URL_RAW=$(grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
+          # Extract publishUrl, userName and userPWD using sed (robust against quoting)
+          PUBLISH_URL_RAW=$(sed -n 's/.*publishUrl="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
           if [ -z "$PUBLISH_URL_RAW" ]; then
             echo "❌ Could not find publishUrl in publishProfile.xml"
             exit 1
           fi
+
+          # Normalize SCM host: some publishUrl values are like <app>.azurewebsites.net:443 or <app>-<hash>.scm.azurewebsites.net
           SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
-          # Kudu zipdeploy endpoint uses scm host with .scm... ensure prefix
           if echo "$SCM_HOST" | grep -q '\.scm\.'; then
             KUDU_API="https://${SCM_HOST}/api/zipdeploy"
           else
-            # some publish profiles use publishUrl like <app>.azurewebsites.net:443
-            KUDU_API="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}/api/zipdeploy"
+            # replace .azurewebsites.net suffix with .scm.azurewebsites.net
+            KUDU_HOST=$(echo "$SCM_HOST" | sed -E 's/\.azurewebsites\.net$/.scm.azurewebsites.net/')
+            KUDU_API="https://${KUDU_HOST}/api/zipdeploy"
           fi
           echo "Kudu API: $KUDU_API"
 
-          KUDU_USER=$(grep -oP 'userName=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
-          KUDU_PASS=$(grep -oP 'userPWD=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
+          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
+          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
 
           if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
             echo "❌ Could not extract Kudu user/password from publishProfile.xml"
