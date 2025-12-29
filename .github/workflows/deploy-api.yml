@@ -1,6 +1,6 @@
-# Workflow: build + deploy Azure Functions (usando Publish Profile)
-# Requer: secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE adicionado ao repositório
-name: Deploy API to Azure Functions (Publish Profile)
+# Build + Publish Azure Functions usando Publish Profile e Azure Functions Core Tools
+# Não usa RBAC / azure/login
+name: Deploy API to Azure Functions (Publish Profile via Core Tools)
 
 on:
   push:
@@ -75,33 +75,62 @@ jobs:
           echo "Listing files:"
           ls -la
 
-      - name: Deploy to Azure Functions (Publish Profile)
-        uses: Azure/functions-action@v1
-        with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: './api'
+      - name: Write Publish Profile to file
         env:
-          AZURE_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        run: |
+          echo "Saving publish profile to ./publishProfile.xml"
+          printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
+          echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
+        working-directory: api
+
+      - name: Install Azure Functions Core Tools (v4)
+        run: |
+          echo "Installing Azure Functions Core Tools v4..."
+          npm i -g azure-functions-core-tools@4 --unsafe-perm true
+          echo "func version: $(func --version || true)"
+        # not changing working-directory: global install
+
+      - name: Publish with Azure Functions Core Tools (using Publish Profile)
+        working-directory: api
+        env:
+          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+        run: |
+          set -e
+          echo "Publishing to $AZURE_FUNCTIONAPP_NAME using publishProfile.xml"
+          # The publish profile file will be used for authentication and the Core Tools will generate function.json as needed.
+          func azure functionapp publish "$AZURE_FUNCTIONAPP_NAME" --publish-profile publishProfile.xml --verbose
+          echo "Publish finished."
+
+      - name: Remove Publish Profile file
+        working-directory: api
+        run: |
+          shred -u publishProfile.xml || rm -f publishProfile.xml || true
+          echo "Removed publishProfile.xml"
 
       - name: Wait for app to warm up
         run: |
+          echo "Waiting a few seconds for the Function App to warm up..."
           sleep 8
 
       - name: Health check (optional)
         run: |
           APP_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
+          echo "Checking $APP_URL"
           n=0
           until [ $n -ge 3 ]
           do
             HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$APP_URL" || echo "000")
             echo "Attempt $((n+1)): HTTP $HTTP_CODE"
             if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health endpoint OK:"
               cat /tmp/health.txt | head -n 40
               break
             fi
             n=$((n+1))
             sleep $((n * 3))
           done
+
           if [ "$HTTP_CODE" != "200" ]; then
             echo "⚠️ Health check failed (last HTTP code: $HTTP_CODE). Check Function App logs in Azure Portal."
           fi
