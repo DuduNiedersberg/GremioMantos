@@ -83,8 +83,7 @@ jobs:
           echo "Saving publish profile to ./publishProfile.xml"
           printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
           echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
-          # show publishUrl (safe) for debug (no secrets)
-          grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | sed -E 's/publishUrl=\"([^\"]+)\"/PublishUrl: \1/'
+          grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | sed -E 's/publishUrl=\"([^\"]+)\"/PublishUrl: \1/' || true
 
       - name: Install Azure Functions Core Tools (v4)
         run: |
@@ -92,7 +91,7 @@ jobs:
           npm i -g azure-functions-core-tools@4 --unsafe-perm true
           echo "func version: $(func --version || true)"
 
-      - name: Create deploy package with func pack (ensure runtime env)
+      - name: Create deploy package (try func pack, fallback to manual ZIP)
         working-directory: api
         env:
           FUNCTIONS_WORKER_RUNTIME: node
@@ -104,51 +103,31 @@ jobs:
           echo "Node version: $(node --version || true)"
           echo "func version: $(func --version || true)"
           echo ""
-          echo "Packing the function app (func pack)..."
-          # Try func pack; if it fails, we'll fall back to manual zip creation
+          echo "Attempting func pack to create deploy_package.zip..."
           if func pack --output deploy_package.zip; then
             echo "✅ func pack succeeded"
             ls -lh deploy_package.zip
             echo "Contents (top 60 lines):"
             unzip -l deploy_package.zip | head -60 || true
-            exit 0
           else
-            echo "⚠️ func pack failed — will attempt manual packaging fallback"
-            exit 10
-          fi
-        continue-on-error: true
-
-      - name: Fallback: create manual deploy ZIP and attempt zipdeploy (runs only if func pack failed)
-        if: steps.create_deploy_package_with_func_pack.outcome == 'failure' || steps.create_deploy_package_with_func_pack.conclusion == 'failure' || steps.create_deploy_package_with_func_pack.outputs['exitcode'] == '10'
-        # Note: the conditional above covers usual failure cases; if GH doesn't set outputs, this step may still run — safe guard below
-        working-directory: api
-        run: |
-          set -e
-          echo "=== Manual packaging fallback ==="
-          # Ensure we only proceed if deploy_package.zip not present
-          if [ -f deploy_package.zip ]; then
-            echo "deploy_package.zip already exists, will use it"
-          else
-            echo "Creating manual deploy_package.zip (host.json, package.json, package-lock.json, dist/*, node_modules)"
-            rm -f deploy_package_manual.zip
+            echo "⚠️ func pack failed — creating manual deploy_package.zip as fallback"
+            rm -f deploy_package.zip
             mkdir -p tmp_deploy
             cp -v host.json tmp_deploy/ || true
             cp -v package.json tmp_deploy/ || true
             cp -v package-lock.json tmp_deploy/ || true
-            # copy compiled code (dist content)
             if [ -d dist ]; then
               cp -r dist/* tmp_deploy/ || true
             else
               echo "⚠️ dist/ not found — build may have failed"
             fi
-            # copy prod node_modules (pruned)
             if [ -d node_modules ]; then
               cp -r node_modules tmp_deploy/ || true
             fi
             cd tmp_deploy
-            zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*"
+            zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*" || true
             cd ..
-            ls -lh deploy_package.zip
+            ls -lh deploy_package.zip || true
             echo "Manual package contents (top 80):"
             unzip -l deploy_package.zip | head -80 || true
           fi
@@ -159,20 +138,25 @@ jobs:
           PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         run: |
           set -e
-          echo "Extracting Kudu credentials from publishProfile.xml (no secret echo)..."
+          echo "Extracting Kudu credentials from publishProfile.xml"
 
-          PUBLISH_URL_RAW=$(grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
+          PUBLISH_URL_RAW=$(grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
           if [ -z "$PUBLISH_URL_RAW" ]; then
             echo "❌ Could not find publishUrl in publishProfile.xml"
             exit 1
           fi
-          # remove trailing :port if any
           SCM_HOST=$(echo "$PUBLISH_URL_RAW" | sed -E 's/:[0-9]+$//')
-          KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+          # Kudu zipdeploy endpoint uses scm host with .scm... ensure prefix
+          if echo "$SCM_HOST" | grep -q '\.scm\.'; then
+            KUDU_API="https://${SCM_HOST}/api/zipdeploy"
+          else
+            # some publish profiles use publishUrl like <app>.azurewebsites.net:443
+            KUDU_API="https://${SCM_HOST/.azurewebsites.net/.scm.azurewebsites.net}/api/zipdeploy"
+          fi
           echo "Kudu API: $KUDU_API"
 
-          KUDU_USER=$(grep -oP 'userName=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
-          KUDU_PASS=$(grep -oP 'userPWD=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
+          KUDU_USER=$(grep -oP 'userName=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
+          KUDU_PASS=$(grep -oP 'userPWD=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2 || true)
 
           if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
             echo "❌ Could not extract Kudu user/password from publishProfile.xml"
@@ -181,10 +165,16 @@ jobs:
 
           echo "Deploying deploy_package.zip via Kudu..."
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip")
+            -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip" || true)
           echo "Kudu response HTTP code: $HTTP_CODE"
           echo "Kudu response (first 200 lines):"
           head -n 200 /tmp/zipdeploy_result.txt || true
+
+          if [ -z "$HTTP_CODE" ]; then
+            echo "❌ No response from Kudu. Possible network/credential issue."
+            cat /tmp/zipdeploy_result.txt || true
+            exit 1
+          fi
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Zipdeploy succeeded"
