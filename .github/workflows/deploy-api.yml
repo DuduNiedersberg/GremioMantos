@@ -1,41 +1,23 @@
-# Build + Pack + ZipDeploy Azure Functions using Publish Profile credentials (Kudu)
-# Does NOT use RBAC / azure/login. Requires secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE
-name: Deploy API to Azure Functions (Pack + Kudu ZipDeploy)
+name: Deploy API to Railway
 
 on:
   push:
     branches: [main]
     paths:
       - 'api/**'
-      - '.github/workflows/deploy-api.yml'
+      - '.github/workflows/deploy-railway.yml'
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: gremiomantosapi
   NODE_VERSION: '20.x'
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    environment: production
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Validate Publish Profile secret
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        run: |
-          if [ -z "${PUBLISH_PROFILE:-}" ]; then
-            echo "❌ AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret not found. Add it at Settings → Secrets and variables → Actions"
-            exit 1
-          fi
-          echo "✅ AZURE_FUNCTIONAPP_PUBLISH_PROFILE present (length: ${#PUBLISH_PROFILE})"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,427 +26,131 @@ jobs:
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
 
-      - name: Install dependencies & Build
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Validate Railway Token
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "❌ RAILWAY_TOKEN secret not configured"
+            echo ""
+            echo "Configure it at: GitHub → Settings → Secrets → Actions"
+            echo "Get token from: Railway Dashboard → Account Settings → Tokens"
+            exit 1
+          fi
+          echo "✅ RAILWAY_TOKEN configured"
+
+      - name: Install dependencies
         working-directory: api
         run: |
-          set -euo pipefail
-          echo "📦 Installing dependencies"
+          echo "📦 Installing dependencies..."
           npm ci
 
-          echo "🔨 Building TypeScript"
+      - name: Build TypeScript
+        working-directory: api
+        run: |
+          echo "🔨 Building TypeScript..."
           npm run build
-
-          echo "✅ Build finished. dist/ contents:"
-          ls -la dist || true
-
-      - name: Prune devDependencies to make package lighter
-        working-directory: api
-        run: |
-          set -euo pipefail
-          npm prune --production || true
-          du -sh node_modules || true
-
-      - name: Verify package structure
-        working-directory: api
-        run: |
-          set -euo pipefail
-          echo "Checking host.json presence..."
-          if [ ! -f host.json ]; then
-            echo "❌ host.json not found in api/ — deploy likely to fail"
-            ls -la
-            exit 1
-          fi
-          echo "✅ host.json exists"
-          echo "Listing files:"
-          ls -la
-
-      - name: Write Publish Profile to file
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        working-directory: api
-        run: |
-          set -euo pipefail
-          echo "Saving publish profile to ./publishProfile.xml"
-          printf '%s' "$PUBLISH_PROFILE" > publishProfile.xml
-          echo "publishProfile.xml size: $(wc -c publishProfile.xml | awk '{print $1}') bytes"
-          sed -n 's/.*publishUrl="\([^"]*\)".*/PublishUrl: \1/p' publishProfile.xml | head -1 || true
-
-      - name: Install system packages (zip, jq)
-        run: |
-          set -euo pipefail
-          echo "Installing zip/unzip/jq (required for packaging and debug)..."
-          sudo apt-get update -y
-          sudo apt-get install -y zip unzip jq || true
-          echo "zip version: $(zip -v 2>/dev/null | head -n 1 || true)"
-          echo "unzip version: $(unzip -v 2>/dev/null | head -n 1 || true)"
-
-      - name: Create deploy package (manual ZIP with correct structure)
-        working-directory: api
-        run: |
-          set -euo pipefail
-          echo "Creating deploy package with correct structure..."
           
-          # Cleanup
-          rm -f deploy_package.zip || true
-          rm -rf deploy_package || true
-          
-          # Create temporary directory
-          mkdir -p deploy_package
-          
-          # Copy files to root of package
-          echo "Copying files..."
-          cp host.json deploy_package/
-          cp package.json deploy_package/
-          cp package-lock.json deploy_package/
-          
-          # Copy contents of dist to root (NOT the dist folder itself)
-          if [ -d dist ]; then
-            echo "Copying dist contents to root..."
-            cp -r dist/* deploy_package/
+          echo ""
+          echo "✅ Build completed. Output:"
+          ls -la dist/ || echo "⚠️ dist/ folder not found"
+
+      - name: Run tests (if available)
+        working-directory: api
+        continue-on-error: true
+        run: |
+          if grep -q '"test"' package.json; then
+            echo "🧪 Running tests..."
+            npm test
           else
-            echo "❌ dist/ not found"
-            exit 1
+            echo "⏭️ No tests configured"
           fi
-          
-          # Copy node_modules
-          if [ -d node_modules ]; then
-            echo "Copying node_modules..."
-            cp -r node_modules deploy_package/
-          fi
-          
-          # Show structure before zipping
-          echo ""
-          echo "Structure before zipping:"
-          cd deploy_package
-          ls -la
-          
-          echo ""
-          echo "Functions found:"
-          find . -name "function.json" -type f
-          
-          # Create ZIP from inside deploy_package
-          echo ""
-          echo "Creating ZIP..."
-          zip -r ../deploy_package.zip . \
-            -x "*.git*" \
-            -x "*.ts" \
-            -x "tsconfig.json" \
-            -x "*.test.js" \
-            -x "tests/*" \
-            -x ".env*" \
-            -x "node_modules/@types/*"
-          
-          cd ..
-          
-          echo ""
-          echo "✅ deploy_package.zip created"
-          ls -lh deploy_package.zip
-          
-          echo ""
-          echo "ZIP contents (first 50 files):"
-          unzip -l deploy_package.zip | head -50
-          
-          echo ""
-          echo "Verifying structure:"
-          echo "1. host.json in root:"
-          unzip -l deploy_package.zip | grep "^\s*[0-9].*\shost\.json$" || echo "❌ NOT FOUND"
-          
-          echo "2. function.json files:"
-          unzip -l deploy_package.zip | grep "function\.json$" || echo "❌ NONE FOUND"
 
-      - name: CRITICAL - Remove SCM_RUN_FROM_PACKAGE and disable remote build
+      - name: Deploy to Railway
         working-directory: api
         env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          set -euo pipefail
-
-          if [ ! -f publishProfile.xml ]; then
-            echo "❌ publishProfile.xml missing. Aborting."
-            exit 1
-          fi
-
-          # Extract Kudu credentials
-          mapfile -t URLS < <(grep -oP 'publishUrl="[^"]+"' publishProfile.xml | sed -E 's/publishUrl="([^"]+)"/\1/')
-          CHOSEN=""
-          for u in "${URLS[@]}"; do
-            hs=$(echo "$u" | sed -E 's#^[^:]+://##' | cut -d'/' -f1)
-            hs=$(echo "$hs" | awk -F'@' '{print $NF}')
-            if echo "$hs" | grep -qiE 'ftp|waws-prod'; then
-              continue
-            fi
-            if echo "$hs" | grep -q '\.scm\.'; then
-              CHOSEN="$hs"
-              break
-            fi
-            if echo "$hs" | grep -q '\.azurewebsites\.net'; then
-              CHOSEN="$hs"
-              break
-            fi
-          done
-
-          if [ -z "$CHOSEN" ]; then
-            echo "No suitable publishUrl found; using fallback"
-            CHOSEN="${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net"
-          fi
-
-          if echo "$CHOSEN" | grep -q '\.scm\.'; then
-            KUDU_HOST="$CHOSEN"
-          elif echo "$CHOSEN" | grep -q '\.azurewebsites\.net$'; then
-            KUDU_HOST=$(echo "$CHOSEN" | sed -E 's/\.azurewebsites\.net$/.scm.brazilsouth-01.azurewebsites.net/')
-          else
-            KUDU_HOST="$CHOSEN"
-          fi
-
-          KUDU_BASE="https://${KUDU_HOST}"
-          echo "Kudu base: $KUDU_BASE"
-
-          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1 || true)
-
-          if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
-            echo "❌ Could not extract KUDU credentials"
-            exit 1
-          fi
-
-          echo ""
-          echo "=========================================="
-          echo "STEP 1: Check current settings"
-          echo "=========================================="
-          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | \
-            jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE, SCM_DO_BUILD_DURING_DEPLOYMENT, ENABLE_ORYX_BUILD}' || true
-
-          echo ""
-          echo "=========================================="
-          echo "STEP 2: DELETE SCM_RUN_FROM_PACKAGE"
-          echo "=========================================="
-          HTTP_CODE=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X DELETE "${KUDU_BASE}/api/settings/SCM_RUN_FROM_PACKAGE" \
-            -w "%{http_code}" -o /tmp/delete_scm.txt)
-          echo "HTTP Code: $HTTP_CODE"
-          cat /tmp/delete_scm.txt || true
-
-          echo ""
-          echo "=========================================="
-          echo "STEP 3: Set WEBSITE_RUN_FROM_PACKAGE=0 and disable builds"
-          echo "=========================================="
-          curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"WEBSITE_RUN_FROM_PACKAGE":"0","SCM_DO_BUILD_DURING_DEPLOYMENT":"false","ENABLE_ORYX_BUILD":"false"}' \
-            "${KUDU_BASE}/api/settings" | jq '.' || true
-
-          sleep 3
-
-          echo ""
-          echo "=========================================="
-          echo "STEP 4: Verify settings changed"
-          echo "=========================================="
-          SETTINGS=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings")
+          echo "🚀 Deploying to Railway..."
           
-          echo "$SETTINGS" | jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE, SCM_DO_BUILD_DURING_DEPLOYMENT, ENABLE_ORYX_BUILD}' || true
+          # Deploy usando Railway CLI
+          railway up --detach
           
-          # Check if SCM_RUN_FROM_PACKAGE still exists
-          if echo "$SETTINGS" | grep -q '"SCM_RUN_FROM_PACKAGE"'; then
-            echo ""
-            echo "⚠️ WARNING: SCM_RUN_FROM_PACKAGE still exists!"
-            echo "This will block zipdeploy. Trying alternative method..."
-            
-            # Try setting it to empty string
-            curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-              -X POST \
-              -H "Content-Type: application/json" \
-              -d '{"SCM_RUN_FROM_PACKAGE":""}' \
-              "${KUDU_BASE}/api/settings" || true
-            
-            sleep 2
-          else
-            echo "✅ SCM_RUN_FROM_PACKAGE successfully removed"
-          fi
-
           echo ""
-          echo "=========================================="
-          echo "STEP 5: Restart app to apply changes"
-          echo "=========================================="
-          HTTP_CODE=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X POST "${KUDU_BASE}/api/app/restart" \
-            -w "%{http_code}" -o /tmp/restart.txt)
-          echo "Restart HTTP Code: $HTTP_CODE"
-          cat /tmp/restart.txt || true
+          echo "✅ Deploy initiated successfully!"
+          echo "🔗 Check status at: https://railway.app/dashboard"
 
-          echo ""
-          echo "Waiting 15s for restart..."
-          sleep 15
-
-          echo ""
-          echo "=========================================="
-          echo "STEP 6: Final verification"
-          echo "=========================================="
-          curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" | \
-            jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE, SCM_DO_BUILD_DURING_DEPLOYMENT, ENABLE_ORYX_BUILD}' || true
-
-      - name: Test if zipdeploy endpoint is available
-        working-directory: api
+      - name: Get deployment URL
         env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          set -e
-
-          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_BASE="https://${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net"
-
-          if [ -z "$KUDU_USER" ] || [ -z "$KUDU_PASS" ]; then
-            echo "❌ Failed to extract credentials from publishProfile.xml"
-            exit 1
-          fi
-
-          echo "Kudu Base: $KUDU_BASE"
-          echo "Testing if /api/zipdeploy is available..."
+          echo "📍 Getting deployment URL..."
           
-          HTTP_CODE=$(curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X GET "${KUDU_BASE}/api/zipdeploy" \
-            -w "%{http_code}" -o /tmp/test_zipdeploy.txt 2>&1 || echo "error")
+          # Tentar obter URL do serviço
+          DOMAIN=$(railway domain 2>/dev/null || echo "")
           
-          echo "HTTP Code: $HTTP_CODE"
-          echo "Response:"
-          cat /tmp/test_zipdeploy.txt 2>/dev/null || echo "(no response file)"
-          
-          if [ -f /tmp/test_zipdeploy.txt ]; then
-            if grep -q "No route registered" /tmp/test_zipdeploy.txt 2>/dev/null; then
-              echo ""
-              echo "❌ ERROR: zipdeploy endpoint still not available!"
-              echo "SCM_RUN_FROM_PACKAGE might still be active or app didn't restart properly"
-              echo ""
-              echo "Checking settings one more time:"
-              curl -s -u "${KUDU_USER}:${KUDU_PASS}" "${KUDU_BASE}/api/settings" 2>/dev/null | \
-                jq '{SCM_RUN_FROM_PACKAGE, WEBSITE_RUN_FROM_PACKAGE}' 2>/dev/null || echo "Could not get settings"
-              
-              echo ""
-              echo "⚠️ Will try alternative deployment method instead"
-              echo "ZIPDEPLOY_AVAILABLE=false" >> $GITHUB_ENV
-              exit 0
-            fi
-          fi
-          
-          echo "✅ Zipdeploy endpoint appears to be available"
-          echo "ZIPDEPLOY_AVAILABLE=true" >> $GITHUB_ENV
-
-      - name: Deploy via Kudu ZipDeploy (Method 1 - Standard)
-        if: env.ZIPDEPLOY_AVAILABLE != 'false'
-        working-directory: api
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        run: |
-          set -e
-
-          if [ ! -f deploy_package.zip ]; then
-            echo "❌ deploy_package.zip not found"
-            exit 1
-          fi
-
-          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_API="https://${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net/api/zipdeploy"
-
-          echo "Deploying to: $KUDU_API"
-          echo "Package size: $(stat -c%s deploy_package.zip 2>/dev/null || stat -f%z deploy_package.zip 2>/dev/null) bytes"
-
-          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt \
-            -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X POST "$KUDU_API" \
-            --data-binary @deploy_package.zip \
-            -H "Content-Type: application/zip" \
-            --max-time 600 2>&1 || echo "error")
-          
-          echo "HTTP Code: $HTTP_CODE"
-          echo "Response:"
-          cat /tmp/zipdeploy_result.txt 2>/dev/null || echo "(no response)"
-
-          if [ "$HTTP_CODE" != "error" ] && [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ ZipDeploy succeeded!"
-            echo "DEPLOY_SUCCESS=true" >> $GITHUB_ENV
+          if [ -n "$DOMAIN" ]; then
+            echo "🔗 Your API is available at: https://$DOMAIN"
+            echo "DEPLOY_URL=https://$DOMAIN" >> $GITHUB_ENV
           else
-            echo "❌ ZipDeploy failed with HTTP $HTTP_CODE"
-            echo "Will try alternative method..."
-            echo "DEPLOY_SUCCESS=false" >> $GITHUB_ENV
+            echo "ℹ️ URL will be available in Railway Dashboard"
           fi
-
-      - name: Deploy via Alternative Method (if standard failed)
-        if: env.DEPLOY_SUCCESS != 'true'
-        working-directory: api
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          AZURE_FUNCTIONAPP_NAME: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        run: |
-          set -e
-
-          KUDU_USER=$(sed -n 's/.*userName="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_PASS=$(sed -n 's/.*userPWD="\([^"]*\)".*/\1/p' publishProfile.xml | head -1)
-          KUDU_BASE="https://${AZURE_FUNCTIONAPP_NAME}.scm.brazilsouth-01.azurewebsites.net"
-
-          echo "Trying VFS ZIP method..."
-          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/vfs_result.txt \
-            -u "${KUDU_USER}:${KUDU_PASS}" \
-            -X PUT "${KUDU_BASE}/api/zip/site/wwwroot/" \
-            --data-binary @deploy_package.zip \
-            -H "Content-Type: application/zip" \
-            --max-time 600 2>&1 || echo "error")
-          
-          echo "HTTP Code: $HTTP_CODE"
-          echo "Response:"
-          cat /tmp/vfs_result.txt 2>/dev/null || echo "(no response)"
-
-          if [ "$HTTP_CODE" != "error" ] && [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ VFS deployment succeeded!"
-            
-            echo "Syncing triggers..."
-            curl -s -u "${KUDU_USER}:${KUDU_PASS}" \
-              -X POST "${KUDU_BASE}/api/functions/synctriggers" 2>/dev/null || true
-            
-            echo "DEPLOY_SUCCESS=true" >> $GITHUB_ENV
-          else
-            echo "❌ Alternative method also failed"
-            exit 1
-          fi
-
-      - name: Remove Publish Profile file
-        if: always()
-        working-directory: api
-        run: |
-          set -euo pipefail
-          shred -u publishProfile.xml || rm -f publishProfile.xml || true
-          echo "Removed publishProfile.xml"
-
-      - name: Wait for app to warm up
-        if: env.DEPLOY_SUCCESS == 'true'
-        run: |
-          echo "Waiting for Function App to warm up..."
-          sleep 20
 
       - name: Health check
-        if: env.DEPLOY_SUCCESS == 'true'
+        if: env.DEPLOY_URL != ''
         run: |
-          APP_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.brazilsouth-01.azurewebsites.net/api/health"
-          echo "Checking $APP_URL"
+          echo "🏥 Performing health check..."
+          echo "Waiting 30s for deployment to complete..."
+          sleep 30
           
           for i in {1..5}; do
+            echo ""
             echo "Attempt $i/5..."
-            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$APP_URL" || echo "000")
-            echo "HTTP $HTTP_CODE"
+            
+            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "${{ env.DEPLOY_URL }}/health" || echo "000")
+            
+            echo "HTTP Status: $HTTP_CODE"
             
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Health check OK:"
+              echo "✅ Health check passed!"
+              echo "Response:"
               cat /tmp/health.txt
+              echo ""
+              echo "🎉 Deployment successful!"
               exit 0
             fi
             
-            sleep 10
+            if [ $i -lt 5 ]; then
+              echo "Waiting 15s before retry..."
+              sleep 15
+            fi
           done
-
-          echo "⚠️ Health check failed. Check Azure Portal logs."
+          
+          echo ""
+          echo "⚠️ Health check did not pass after 5 attempts"
+          echo "Check Railway logs at: https://railway.app/dashboard"
           echo "Last response:"
-          cat /tmp/health.txt || true
+          cat /tmp/health.txt 2>/dev/null || echo "(no response)"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "📊 DEPLOYMENT SUMMARY"
+          echo "=========================================="
+          echo "Platform: Railway"
+          echo "Environment: Production"
+          echo "Node Version: ${{ env.NODE_VERSION }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo ""
+          echo "🔗 Railway Dashboard: https://railway.app/dashboard"
+          if [ -n "${{ env.DEPLOY_URL }}" ]; then
+            echo "🌐 API URL: ${{ env.DEPLOY_URL }}"
+          fi
+          echo "=========================================="
