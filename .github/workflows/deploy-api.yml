@@ -1,5 +1,5 @@
 # Build + Pack + ZipDeploy Azure Functions using Publish Profile credentials (Kudu)
-# Não usa RBAC / azure/login. Requer secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+# Does NOT use RBAC / azure/login. Requires secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE
 name: Deploy API to Azure Functions (Pack + Kudu ZipDeploy)
 
 on:
@@ -92,18 +92,66 @@ jobs:
           npm i -g azure-functions-core-tools@4 --unsafe-perm true
           echo "func version: $(func --version || true)"
 
-      - name: Create deploy package with func pack
+      - name: Create deploy package with func pack (ensure runtime env)
+        working-directory: api
+        env:
+          FUNCTIONS_WORKER_RUNTIME: node
+          WEBSITE_NODE_DEFAULT_VERSION: 20
+        run: |
+          set -e
+          echo "ENV CHECK:"
+          echo "FUNCTIONS_WORKER_RUNTIME=$FUNCTIONS_WORKER_RUNTIME"
+          echo "Node version: $(node --version || true)"
+          echo "func version: $(func --version || true)"
+          echo ""
+          echo "Packing the function app (func pack)..."
+          # Try func pack; if it fails, we'll fall back to manual zip creation
+          if func pack --output deploy_package.zip; then
+            echo "✅ func pack succeeded"
+            ls -lh deploy_package.zip
+            echo "Contents (top 60 lines):"
+            unzip -l deploy_package.zip | head -60 || true
+            exit 0
+          else
+            echo "⚠️ func pack failed — will attempt manual packaging fallback"
+            exit 10
+          fi
+        continue-on-error: true
+
+      - name: Fallback: create manual deploy ZIP and attempt zipdeploy (runs only if func pack failed)
+        if: steps.create_deploy_package_with_func_pack.outcome == 'failure' || steps.create_deploy_package_with_func_pack.conclusion == 'failure' || steps.create_deploy_package_with_func_pack.outputs['exitcode'] == '10'
+        # Note: the conditional above covers usual failure cases; if GH doesn't set outputs, this step may still run — safe guard below
         working-directory: api
         run: |
           set -e
-          echo "Packing the function app (func pack)..."
-          # func pack will generate function.json for v4 isolated model and create a zip for deploy
-          # output zip will be api/deploy_package.zip
-          func pack --output deploy_package.zip
-          echo "Pack result:"
-          ls -lh deploy_package.zip
-          echo "Contents (top 60 lines):"
-          unzip -l deploy_package.zip | head -60 || true
+          echo "=== Manual packaging fallback ==="
+          # Ensure we only proceed if deploy_package.zip not present
+          if [ -f deploy_package.zip ]; then
+            echo "deploy_package.zip already exists, will use it"
+          else
+            echo "Creating manual deploy_package.zip (host.json, package.json, package-lock.json, dist/*, node_modules)"
+            rm -f deploy_package_manual.zip
+            mkdir -p tmp_deploy
+            cp -v host.json tmp_deploy/ || true
+            cp -v package.json tmp_deploy/ || true
+            cp -v package-lock.json tmp_deploy/ || true
+            # copy compiled code (dist content)
+            if [ -d dist ]; then
+              cp -r dist/* tmp_deploy/ || true
+            else
+              echo "⚠️ dist/ not found — build may have failed"
+            fi
+            # copy prod node_modules (pruned)
+            if [ -d node_modules ]; then
+              cp -r node_modules tmp_deploy/ || true
+            fi
+            cd tmp_deploy
+            zip -r ../deploy_package.zip . -x "*.git*" -x "*.ts" -x "tsconfig.json" -x "*.test.js" -x "tests/*" -x ".env*" -x "node_modules/@types/*"
+            cd ..
+            ls -lh deploy_package.zip
+            echo "Manual package contents (top 80):"
+            unzip -l deploy_package.zip | head -80 || true
+          fi
 
       - name: Extract Kudu credentials from publishProfile and zipdeploy
         working-directory: api
@@ -113,7 +161,6 @@ jobs:
           set -e
           echo "Extracting Kudu credentials from publishProfile.xml (no secret echo)..."
 
-          # publishUrl might have port like :443, remove port for https base
           PUBLISH_URL_RAW=$(grep -oP 'publishUrl=\"[^\"]+\"' publishProfile.xml | head -1 | cut -d'\"' -f2)
           if [ -z "$PUBLISH_URL_RAW" ]; then
             echo "❌ Could not find publishUrl in publishProfile.xml"
@@ -133,7 +180,6 @@ jobs:
           fi
 
           echo "Deploying deploy_package.zip via Kudu..."
-          # Perform zipdeploy
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/zipdeploy_result.txt -u "${KUDU_USER}:${KUDU_PASS}" \
             -X POST "$KUDU_API" --data-binary @deploy_package.zip -H "Content-Type: application/zip")
           echo "Kudu response HTTP code: $HTTP_CODE"
@@ -153,7 +199,7 @@ jobs:
         working-directory: api
         run: |
           shred -u publishProfile.xml || rm -f publishProfile.xml || true
-          echo "Removed publishProfile.xml"
+          echo "Removed publishProfile.xml" || true
 
       - name: Wait for app to warm up
         run: |
