@@ -1,20 +1,26 @@
-name: Deploy API to Railway
+name: Deploy Azure Functions API (Solução Definitiva)
 
 on:
   push:
     branches: [main]
     paths:
       - 'api/**'
-      - '.github/workflows/deploy-railway.yml'
+      - '.github/workflows/deploy-azure-functions.yml'
   workflow_dispatch:
 
 env:
+  AZURE_FUNCTIONAPP_NAME: gremiomantosapi
   NODE_VERSION: '20.x'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    
+    environment: production
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,91 +32,79 @@ jobs:
           cache: 'npm'
           cache-dependency-path: api/package-lock.json
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Validate Railway Token
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "❌ RAILWAY_TOKEN secret not configured"
-            echo ""
-            echo "Configure it at: GitHub → Settings → Secrets → Actions"
-            echo "Get token from: Railway Dashboard → Account Settings → Tokens"
-            exit 1
-          fi
-          echo "✅ RAILWAY_TOKEN configured"
-
-      - name: Install dependencies
+      - name: Install dependencies and build
         working-directory: api
         run: |
           echo "📦 Installing dependencies..."
           npm ci
-
-      - name: Build TypeScript
-        working-directory: api
-        run: |
+          
           echo "🔨 Building TypeScript..."
           npm run build
           
-          echo ""
-          echo "✅ Build completed. Output:"
-          ls -la dist/ || echo "⚠️ dist/ folder not found"
+          echo "✅ Build completed"
+          ls -la dist/
 
-      - name: Run tests (if available)
+      - name: Create deployment package
         working-directory: api
-        continue-on-error: true
         run: |
-          if grep -q '"test"' package.json; then
-            echo "🧪 Running tests..."
-            npm test
-          else
-            echo "⏭️ No tests configured"
-          fi
-
-      - name: Deploy to Railway
-        working-directory: api
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "🚀 Deploying to Railway..."
+          echo "📦 Creating deployment package..."
           
-          # Deploy usando Railway CLI
-          railway up --detach
+          # Remove dev dependencies
+          npm prune --production
+          
+          # Create clean directory structure
+          mkdir -p ../deploy_temp
+          
+          # Copy files maintaining Azure Functions structure
+          echo "Copying files..."
+          cp host.json ../deploy_temp/
+          cp package.json ../deploy_temp/
+          cp -r dist/* ../deploy_temp/
+          cp -r node_modules ../deploy_temp/
+          
+          cd ../deploy_temp
+          
+          echo "Files in package root:"
+          ls -la
           
           echo ""
-          echo "✅ Deploy initiated successfully!"
-          echo "🔗 Check status at: https://railway.app/dashboard"
+          echo "Function directories:"
+          find . -maxdepth 1 -type d ! -name "." ! -name ".." ! -name "node_modules" | sort
+          
+          echo ""
+          echo "function.json files:"
+          find . -name "function.json"
+          
+          # Create ZIP
+          zip -r ../api/deploy.zip . -q
+          
+          cd ../api
+          echo ""
+          echo "✅ Package created: $(ls -lh deploy.zip)"
 
-      - name: Get deployment URL
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Deploy to Azure Functions (using action)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: api/deploy.zip
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+      - name: Wait for deployment
         run: |
-          echo "📍 Getting deployment URL..."
-          
-          # Tentar obter URL do serviço
-          DOMAIN=$(railway domain 2>/dev/null || echo "")
-          
-          if [ -n "$DOMAIN" ]; then
-            echo "🔗 Your API is available at: https://$DOMAIN"
-            echo "DEPLOY_URL=https://$DOMAIN" >> $GITHUB_ENV
-          else
-            echo "ℹ️ URL will be available in Railway Dashboard"
-          fi
+          echo "⏳ Waiting for deployment to complete (30s)..."
+          sleep 30
 
       - name: Health check
-        if: env.DEPLOY_URL != ''
         run: |
-          echo "🏥 Performing health check..."
-          echo "Waiting 30s for deployment to complete..."
-          sleep 30
+          echo "🏥 Testing deployment..."
           
-          for i in {1..5}; do
+          BASE_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.brazilsouth-01.azurewebsites.net"
+          
+          for i in {1..10}; do
             echo ""
-            echo "Attempt $i/5..."
+            echo "Attempt $i/10..."
             
-            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "${{ env.DEPLOY_URL }}/health" || echo "000")
+            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$BASE_URL/api/health" || echo "000")
             
             echo "HTTP Status: $HTTP_CODE"
             
@@ -120,37 +114,19 @@ jobs:
               cat /tmp/health.txt
               echo ""
               echo "🎉 Deployment successful!"
+              echo "🔗 API URL: $BASE_URL"
               exit 0
             fi
             
-            if [ $i -lt 5 ]; then
-              echo "Waiting 15s before retry..."
+            if [ $i -lt 10 ]; then
+              echo "Waiting 15s..."
               sleep 15
             fi
           done
           
           echo ""
-          echo "⚠️ Health check did not pass after 5 attempts"
-          echo "Check Railway logs at: https://railway.app/dashboard"
+          echo "⚠️ Health check did not pass"
           echo "Last response:"
           cat /tmp/health.txt 2>/dev/null || echo "(no response)"
-
-      - name: Deployment summary
-        if: always()
-        run: |
           echo ""
-          echo "=========================================="
-          echo "📊 DEPLOYMENT SUMMARY"
-          echo "=========================================="
-          echo "Platform: Railway"
-          echo "Environment: Production"
-          echo "Node Version: ${{ env.NODE_VERSION }}"
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo ""
-          echo "🔗 Railway Dashboard: https://railway.app/dashboard"
-          if [ -n "${{ env.DEPLOY_URL }}" ]; then
-            echo "🌐 API URL: ${{ env.DEPLOY_URL }}"
-          fi
-          echo "=========================================="
+          echo "Check Azure Portal logs"
