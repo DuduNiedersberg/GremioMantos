@@ -1,63 +1,132 @@
-name: Deploy Azure Functions API
+name: Deploy Azure Functions API (Solução Definitiva)
 
 on:
   push:
     branches: [main]
     paths:
       - 'api/**'
-      - '.github/workflows/deploy-api.yml'
+      - '.github/workflows/deploy-azure-functions.yml'
   workflow_dispatch:
 
 env:
   AZURE_FUNCTIONAPP_NAME: gremiomantosapi
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'api'
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '20.x'
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: production
-    permissions:
-      id-token: write
-      contents: read
-    
+
     steps:
-    - name: 'Checkout código'
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: 'Setup Node.js ${{ env.NODE_VERSION }}'
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        cache-dependency-path: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/package-lock.json'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
 
-    - name: 'Instalar dependências e build'
-      shell: bash
-      working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-      run: |
-        echo "📦 Instalando dependências..."
-        npm ci
-        echo "🔨 Building..."
-        npm run build --if-present
-        echo "✅ Build concluído!"
+      - name: Install dependencies and build
+        working-directory: api
+        run: |
+          echo "📦 Installing dependencies..."
+          npm ci
+          
+          echo "🔨 Building TypeScript..."
+          npm run build
+          
+          echo "✅ Build completed"
+          ls -la dist/
 
-    - name: 'Login to Azure'
-      uses: azure/login@v2
-      with:
-        client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_114C5CBC7F014AC1968C3C3D78E69D3C }}
-        tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_DA37744F05FF4587B873FA8B2123DB77 }}
-        subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD06D50EEDBE45D8BB2F9056F0C2B463 }}
+      - name: Create deployment package
+        working-directory: api
+        run: |
+          echo "📦 Creating deployment package..."
+          
+          # Remove dev dependencies
+          npm prune --production
+          
+          # Create clean directory structure
+          mkdir -p ../deploy_temp
+          
+          # Copy files maintaining Azure Functions structure
+          echo "Copying files..."
+          cp host.json ../deploy_temp/
+          cp package.json ../deploy_temp/
+          cp -r dist/* ../deploy_temp/
+          cp -r node_modules ../deploy_temp/
+          
+          cd ../deploy_temp
+          
+          echo "Files in package root:"
+          ls -la
+          
+          echo ""
+          echo "Function directories:"
+          find . -maxdepth 1 -type d ! -name "." ! -name ".." ! -name "node_modules" | sort
+          
+          echo ""
+          echo "function.json files:"
+          find . -name "function.json"
+          
+          # Create ZIP
+          zip -r ../api/deploy.zip . -q
+          
+          cd ../api
+          echo ""
+          echo "✅ Package created: $(ls -lh deploy.zip)"
 
-    - name: 'Deploy para Azure Functions'
-      uses: Azure/functions-action@v1
-      with:
-        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+      - name: Deploy to Azure Functions (using action)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: api/deploy.zip
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
-    - name: 'Health Check'
-      run: |
-        echo "⏳ Aguardando cold start..."
-        sleep 30
-        echo "🔍 Testando endpoint /api/health..."
-        curl -f https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api/health || echo "⚠️ Health check falhou (pode ser CORS)"
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to complete (30s)..."
+          sleep 30
+
+      - name: Health check
+        run: |
+          echo "🏥 Testing deployment..."
+          
+          BASE_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.brazilsouth-01.azurewebsites.net"
+          
+          for i in {1..10}; do
+            echo ""
+            echo "Attempt $i/10..."
+            
+            HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$BASE_URL/api/health" || echo "000")
+            
+            echo "HTTP Status: $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health check passed!"
+              echo "Response:"
+              cat /tmp/health.txt
+              echo ""
+              echo "🎉 Deployment successful!"
+              echo "🔗 API URL: $BASE_URL"
+              exit 0
+            fi
+            
+            if [ $i -lt 10 ]; then
+              echo "Waiting 15s..."
+              sleep 15
+            fi
+          done
+          
+          echo ""
+          echo "⚠️ Health check did not pass"
+          echo "Last response:"
+          cat /tmp/health.txt 2>/dev/null || echo "(no response)"
+          echo ""
+          echo "Check Azure Portal logs"
