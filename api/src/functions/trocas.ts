@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { trocaSchema } from '../lib/utils';
+import { trocaSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Troca } from '../lib/types';
 
 async function trocasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -19,8 +19,9 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
     // GET /api/trocas - List all trades
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const offset = (page - 1) * perPage;
 
       const countQuery = 'SELECT COUNT(*) as total FROM trocas';
@@ -71,7 +72,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
     // POST /api/trocas - Create new trade
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = trocaSchema.parse(body);
 
       // Update item statuses

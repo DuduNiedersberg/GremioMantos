@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { wishlistSchema } from '../lib/utils';
+import { wishlistSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { WishlistItem } from '../lib/types';
 
 async function wishlistHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -19,8 +19,9 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // GET /api/wishlist - List all wishlist items
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const status = request.query.get('status');
       const prioridade = request.query.get('prioridade');
       const offset = (page - 1) * perPage;
@@ -81,7 +82,7 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // POST /api/wishlist - Create new wishlist item
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = wishlistSchema.parse(body);
 
       const query = `
@@ -102,7 +103,7 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // PUT /api/wishlist/{id} - Update wishlist item
     if (method === 'PUT' && id) {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = wishlistSchema.partial().parse(body);
 
       const setClauses = Object.keys(validated)

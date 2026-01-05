@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { historicoPrecoSchema } from '../lib/utils';
+import { historicoPrecoSchema, safeParseJson } from '../lib/utils';
 import { HistoricoPreco } from '../lib/types';
 
 async function historicoHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -35,7 +35,7 @@ async function historicoHandler(request: HttpRequest, context: InvocationContext
 
     // POST /api/itens/{itemId}/historico-precos - Add price history entry
     if (method === 'POST') {
-      const body = await request.json() as any;
+      const body = await safeParseJson(request) as any;
       const validated = historicoPrecoSchema.parse({
         ...body,
         item_id: parseInt(itemId),
