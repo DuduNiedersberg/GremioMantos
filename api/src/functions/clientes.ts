@@ -4,6 +4,7 @@ import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { Cliente } from '../lib/types';
 import { z } from 'zod';
+import { safeParseJson, clampPagination } from '../lib/utils';
 
 const clienteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
@@ -28,8 +29,9 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
     // GET /api/clientes - List all customers
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const search = request.query.get('search');
       const offset = (page - 1) * perPage;
 
@@ -89,7 +91,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
     // POST /api/clientes - Create new customer
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = clienteSchema.parse(body);
 
       const query = `
@@ -108,7 +110,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
     // PUT /api/clientes/{id} - Update customer
     if (method === 'PUT' && id) {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = clienteSchema.partial().parse(body);
 
       const setClauses = Object.keys(validated)

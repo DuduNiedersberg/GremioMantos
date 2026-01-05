@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { itemSchema } from '../lib/utils';
+import { itemSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Item } from '../lib/types';
 
 async function itensHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -19,8 +19,9 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // GET /api/itens - List all items
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const situacao = request.query.get('situacao');
       const search = request.query.get('search');
       
@@ -75,7 +76,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // POST /api/itens - Create new item
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = itemSchema.parse(body);
 
       const query = `
@@ -96,7 +97,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // PUT /api/itens/{id} - Update item
     if (method === 'PUT' && id) {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = itemSchema.partial().parse(body);
 
       const setClauses = Object.keys(validated)

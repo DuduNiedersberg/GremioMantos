@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { vendaSchema } from '../lib/utils';
+import { vendaSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Venda } from '../lib/types';
 
 async function vendasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -19,8 +19,9 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
 
     // GET /api/vendas - List all sales
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const offset = (page - 1) * perPage;
 
       const countQuery = 'SELECT COUNT(*) as total FROM vendas';
@@ -67,7 +68,7 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
 
     // POST /api/vendas - Create new sale
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = vendaSchema.parse(body);
 
       // Update item status to 'vendido'

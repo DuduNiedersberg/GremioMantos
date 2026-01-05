@@ -40,10 +40,10 @@ O **Bolicho do Grêmio - Vale dos Sinos** é um sistema web profissional e compl
 ### Stack Tecnológica
 
 #### Backend - Azure Functions
-- **Runtime:** Node.js 22.x
+- **Runtime:** Node.js 20.x LTS
 - **Framework:** Azure Functions v4
 - **Database:** Azure SQL Database
-- **Auth:** System-Assigned Managed Identity
+- **Auth:** SQL Authentication (user/password)
 - **Language:** TypeScript
 
 #### Frontend - React SPA
@@ -133,7 +133,7 @@ GremioMantos/
 
 ### Pré-requisitos
 
-- Node.js 22.x ou superior
+- Node.js 20.x LTS
 - Azure Functions Core Tools 4.x
 - Azure CLI (para deploy)
 - Conta Azure (para backend)
@@ -166,7 +166,19 @@ npm run dev  # Inicia em http://localhost:5173
 
 ### Variáveis de Ambiente
 
-#### Backend (local.settings.json)
+#### Backend (local.settings.json para desenvolvimento local)
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "SQL_CONNECTION_STRING": "Server=<server>.database.windows.net;Database=<database>;User Id=<user>;Password=<password>;Encrypt=true;"
+  }
+}
+```
+
+**Ou configure individualmente:**
 ```json
 {
   "IsEncrypted": false,
@@ -174,10 +186,21 @@ npm run dev  # Inicia em http://localhost:5173
     "AzureWebJobsStorage": "",
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "SQL_SERVER": "gremio.database.windows.net",
-    "SQL_DATABASE": "bolicho_gremio_camisetas"
+    "SQL_DATABASE": "bolicho_gremio_camisetas",
+    "SQL_USER": "seu_usuario",
+    "SQL_PASSWORD": "sua_senha"
   }
 }
 ```
+
+**Variáveis de ambiente do backend:**
+- `SQL_CONNECTION_STRING` (recomendado): Connection string completa para o Azure SQL
+- `SQL_SERVER`: Nome do servidor SQL (se não usar connection string)
+- `SQL_DATABASE`: Nome do banco de dados (se não usar connection string)
+- `SQL_USER`: Usuário SQL (se não usar connection string)
+- `SQL_PASSWORD`: Senha SQL (se não usar connection string)
+
+**Nota:** Para deploy no Azure, configure essas variáveis nas Application Settings do Function App.
 
 #### Frontend (.env)
 ```bash
@@ -321,12 +344,14 @@ Content-Type: application/json
 
 ## 🔐 Segurança
 
-- ✅ System-Assigned Managed Identity para SQL
-- ✅ CORS configurado
+- ✅ SQL Authentication com credenciais seguras
+- ✅ CORS configurado com allowlist (GitHub Pages + localhost)
 - ✅ HTTPS only
 - ✅ Input validation com Zod
 - ✅ SQL injection protection (parameterized queries)
 - ✅ Error messages sem info sensível
+- ✅ JSON parsing com tratamento de erros (400 para JSON inválido)
+- ✅ Pagination clamping (máx 100 itens por página)
 
 ---
 

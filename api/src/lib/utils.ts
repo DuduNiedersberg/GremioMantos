@@ -122,3 +122,31 @@ export function parseQueryParams(url: string): Record<string, string> {
   });
   return params;
 }
+
+/**
+ * Safely parse JSON from request body
+ * Returns parsed JSON or throws an error with proper message
+ */
+export async function safeParseJson<T = any>(request: { json(): Promise<T> }): Promise<T> {
+  try {
+    return await request.json();
+  } catch (error) {
+    throw new Error('Invalid JSON in request body');
+  }
+}
+
+/**
+ * Clamp pagination parameters to safe values
+ * - page must be >= 1
+ * - perPage must be between 1 and maxPerPage (default 100)
+ */
+export function clampPagination(
+  page: number,
+  perPage: number,
+  maxPerPage: number = 100
+): { page: number; perPage: number } {
+  // Handle NaN by defaulting to 1 for page and 30 for perPage
+  const clampedPage = isNaN(page) ? 1 : Math.max(1, Math.floor(page));
+  const clampedPerPage = isNaN(perPage) ? 30 : Math.max(1, Math.min(maxPerPage, Math.floor(perPage)));
+  return { page: clampedPage, perPage: clampedPerPage };
+}

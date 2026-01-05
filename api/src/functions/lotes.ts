@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { loteSchema } from '../lib/utils';
+import { loteSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Lote } from '../lib/types';
 
 async function lotesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -19,8 +19,9 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // GET /api/lotes - List all batches
     if (method === 'GET' && !id) {
-      const page = parseInt(request.query.get('page') || '1');
-      const perPage = parseInt(request.query.get('perPage') || '30');
+      const rawPage = parseInt(request.query.get('page') || '1');
+      const rawPerPage = parseInt(request.query.get('perPage') || '30');
+      const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const offset = (page - 1) * perPage;
 
       const countQuery = 'SELECT COUNT(*) as total FROM lotes';
@@ -64,7 +65,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // POST /api/lotes - Create new batch
     if (method === 'POST') {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = loteSchema.parse(body);
 
       const query = `
@@ -87,7 +88,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // PUT /api/lotes/{id} - Update batch
     if (method === 'PUT' && id) {
-      const body = await request.json();
+      const body = await safeParseJson(request);
       const validated = loteSchema.partial().parse(body);
 
       const setClauses = Object.keys(validated)

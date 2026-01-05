@@ -18,6 +18,18 @@ export class ApiError extends Error {
 export function handleError(error: unknown, context: InvocationContext, origin?: string): HttpResponseInit {
   context.error('Error occurred:', error);
 
+  // Handle JSON parse errors
+  if (error instanceof Error && error.message === 'Invalid JSON in request body') {
+    return addCorsHeaders({
+      status: 400,
+      jsonBody: {
+        success: false,
+        error: 'Invalid JSON',
+        message: 'Request body must be valid JSON',
+      },
+    }, origin);
+  }
+
   if (error instanceof ZodError) {
     return addCorsHeaders({
       status: 400,
