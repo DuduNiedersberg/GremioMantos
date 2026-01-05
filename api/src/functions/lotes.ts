@@ -30,7 +30,7 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
       const query = `
         SELECT * FROM lotes
-        ORDER BY data_compra DESC
+        ORDER BY data_aquisicao DESC
         OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
 
@@ -70,17 +70,19 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
       const query = `
         INSERT INTO lotes (
-          nome, descricao, data_compra, valor_total, fornecedor
+          nome, quantidade_total, quantidade_disponivel, 
+          valor_unitario_compra, data_aquisicao, observacoes
         )
         OUTPUT INSERTED.*
         VALUES (
-          @nome, @descricao, @data_compra, @valor_total, @fornecedor
+          @nome, @quantidade_total, @quantidade_disponivel,
+          @valor_unitario_compra, @data_aquisicao, @observacoes
         )
       `;
 
       const result = await executeQuery<Lote>(query, {
         ...validated,
-        data_compra: validated.data_compra || new Date().toISOString().split('T')[0],
+        data_aquisicao: validated.data_aquisicao || new Date().toISOString().split('T')[0],
       });
 
       return successResponse(result.recordset[0], 201, origin);

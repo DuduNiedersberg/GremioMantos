@@ -8,10 +8,11 @@ import { safeParseJson, clampPagination } from '../lib/utils';
 
 const clienteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  email: z.string().email().optional(),
+  apelido: z.string().optional(),
   telefone: z.string().optional(),
+  instagram: z.string().optional(),
   cidade: z.string().optional(),
-  estado: z.string().length(2).optional(),
+  tipo: z.string().optional(),
   observacoes: z.string().optional(),
 });
 
@@ -39,7 +40,7 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       const params: Record<string, any> = {};
 
       if (search) {
-        whereClause += ' AND (nome LIKE @search OR email LIKE @search OR cidade LIKE @search)';
+        whereClause += ' AND (nome LIKE @search OR apelido LIKE @search OR instagram LIKE @search OR cidade LIKE @search)';
         params.search = `%${search}%`;
       }
 
@@ -75,11 +76,12 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       }
 
       const vendasQuery = `
-        SELECT v.*, i.nome as item_nome
-        FROM vendas v
-        LEFT JOIN itens i ON v.item_id = i.id
-        WHERE v.cliente_id = @id
-        ORDER BY v.data_venda DESC
+        SELECT id, nome, ano, tipo, marca, jogador, 
+               valor_compra, valor_venda, lucro_calculado, 
+               data_saida, destino
+        FROM dbo.vw_historico_vendas
+        WHERE cliente_id = @id
+        ORDER BY data_saida DESC
       `;
       const vendasResult = await executeQuery(vendasQuery, { id });
 
@@ -96,11 +98,11 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
       const query = `
         INSERT INTO clientes (
-          nome, email, telefone, cidade, estado, observacoes
+          nome, apelido, telefone, instagram, cidade, tipo, observacoes
         )
         OUTPUT INSERTED.*
         VALUES (
-          @nome, @email, @telefone, @cidade, @estado, @observacoes
+          @nome, @apelido, @telefone, @instagram, @cidade, @tipo, @observacoes
         )
       `;
 

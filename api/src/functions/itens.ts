@@ -3,7 +3,6 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { itemSchema, safeParseJson, clampPagination } from '../lib/utils';
-import { Item } from '../lib/types';
 
 async function itensHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
@@ -45,16 +44,28 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       const total = countResult.recordset[0].total;
 
       const query = `
-        SELECT * FROM itens 
+        SELECT 
+          id, tipo, nome, ano, modelo, marca, jogador, 
+          numero_camisa, tamanho, cor_principal, condicao, 
+          autografada, autografo_descricao, valor_compra, valor_venda, 
+          lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
+          observacoes, criado_em, atualizado_em, lote_id, valor_mercado
+        FROM itens 
         ${whereClause}
         ORDER BY criado_em DESC
         OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
       
-      const result = await executeQuery<Item>(query, params);
+      const result = await executeQuery<any>(query, params);
+      
+      // Map numero_camisa to numero for API compatibility
+      const mappedData = result.recordset.map((item: any) => ({
+        ...item,
+        numero: item.numero_camisa,
+      }));
 
       return successResponse({
-        data: result.recordset,
+        data: mappedData,
         page,
         perPage,
         total,
@@ -64,35 +75,87 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // GET /api/itens/{id} - Get single item
     if (method === 'GET' && id) {
-      const query = 'SELECT * FROM itens WHERE id = @id';
-      const result = await executeQuery<Item>(query, { id });
+      const query = `
+        SELECT 
+          id, tipo, nome, ano, modelo, marca, jogador, 
+          numero_camisa, tamanho, cor_principal, condicao, 
+          autografada, autografo_descricao, valor_compra, valor_venda, 
+          lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
+          observacoes, criado_em, atualizado_em, lote_id, valor_mercado
+        FROM itens 
+        WHERE id = @id
+      `;
+      const result = await executeQuery<any>(query, { id });
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0], 200, origin);
+      // Map numero_camisa to numero for API compatibility
+      const item = {
+        ...result.recordset[0],
+        numero: result.recordset[0].numero_camisa,
+      };
+
+      return successResponse(item, 200, origin);
     }
 
     // POST /api/itens - Create new item
     if (method === 'POST') {
       const body = await safeParseJson(request);
       const validated = itemSchema.parse(body);
+      
+      // Map 'numero' from API to 'numero_camisa' for DB
+      const dbParams: any = {
+        tipo: validated.tipo,
+        nome: validated.nome,
+        ano: validated.ano,
+        modelo: validated.modelo,
+        marca: validated.marca,
+        jogador: validated.jogador,
+        numero_camisa: (validated as any).numero,
+        tamanho: validated.tamanho,
+        cor_principal: (validated as any).cor_principal,
+        condicao: (validated as any).condicao,
+        autografada: (validated as any).autografada,
+        autografo_descricao: (validated as any).autografo_descricao,
+        valor_compra: validated.valor_compra,
+        valor_venda: validated.valor_venda,
+        lucro_calculado: (validated as any).lucro_calculado,
+        situacao: validated.situacao,
+        destino: (validated as any).destino,
+        data_aquisicao: validated.data_aquisicao,
+        data_saida: (validated as any).data_saida,
+        observacoes: validated.observacoes,
+        lote_id: validated.lote_id,
+        valor_mercado: validated.valor_mercado,
+      };
 
       const query = `
         INSERT INTO itens (
-          nome, ano, marca, modelo, jogador, numero, tamanho, situacao,
-          valor_compra, valor_venda, valor_mercado, lote_id, data_aquisicao, origem, observacoes
+          tipo, nome, ano, modelo, marca, jogador, numero_camisa, tamanho,
+          cor_principal, condicao, autografada, autografo_descricao,
+          valor_compra, valor_venda, lucro_calculado, situacao, destino,
+          data_aquisicao, data_saida, observacoes, lote_id, valor_mercado
         ) 
         OUTPUT INSERTED.*
         VALUES (
-          @nome, @ano, @marca, @modelo, @jogador, @numero, @tamanho, @situacao,
-          @valor_compra, @valor_venda, @valor_mercado, @lote_id, @data_aquisicao, @origem, @observacoes
+          @tipo, @nome, @ano, @modelo, @marca, @jogador, @numero_camisa, @tamanho,
+          @cor_principal, @condicao, @autografada, @autografo_descricao,
+          @valor_compra, @valor_venda, @lucro_calculado, @situacao, @destino,
+          @data_aquisicao, @data_saida, @observacoes, @lote_id, @valor_mercado
         )
       `;
 
-      const result = await executeQuery<Item>(query, validated);
-      return successResponse(result.recordset[0], 201, origin);
+      const result = await executeQuery<any>(query, dbParams);
+      
+      // Map numero_camisa to numero for API response
+      const responseItem = {
+        ...result.recordset[0],
+        numero: result.recordset[0].numero_camisa,
+      };
+      
+      return successResponse(responseItem, 201, origin);
     }
 
     // PUT /api/itens/{id} - Update item
@@ -100,7 +163,14 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       const body = await safeParseJson(request);
       const validated = itemSchema.partial().parse(body);
 
-      const setClauses = Object.keys(validated)
+      // Map 'numero' from API to 'numero_camisa' for DB
+      const dbParams: any = { ...validated };
+      if ('numero' in validated) {
+        dbParams.numero_camisa = (validated as any).numero;
+        delete dbParams.numero;
+      }
+
+      const setClauses = Object.keys(dbParams)
         .map(key => `${key} = @${key}`)
         .join(', ');
 
@@ -111,13 +181,19 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         WHERE id = @id
       `;
 
-      const result = await executeQuery<Item>(query, { ...validated, id });
+      const result = await executeQuery<any>(query, { ...dbParams, id });
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
 
-      return successResponse(result.recordset[0], 200, origin);
+      // Map numero_camisa to numero for API response
+      const responseItem = {
+        ...result.recordset[0],
+        numero: result.recordset[0].numero_camisa,
+      };
+
+      return successResponse(responseItem, 200, origin);
     }
 
     // DELETE /api/itens/{id} - Delete item

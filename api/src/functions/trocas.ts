@@ -83,12 +83,12 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
       const query = `
         INSERT INTO trocas (
-          item_dado_id, item_recebido_id, valor_item_dado, valor_item_recebido,
+          item_dado_id, item_recebido_id, valor_adicional, quem_pagou,
           data_troca, observacoes
         )
         OUTPUT INSERTED.*
         VALUES (
-          @item_dado_id, @item_recebido_id, @valor_item_dado, @valor_item_recebido,
+          @item_dado_id, @item_recebido_id, @valor_adicional, @quem_pagou,
           @data_troca, @observacoes
         )
       `;

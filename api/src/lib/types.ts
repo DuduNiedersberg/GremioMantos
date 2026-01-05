@@ -4,47 +4,55 @@
 
 export interface Item {
   id: number;
+  tipo: string; // NOT NULL in DB
   nome: string;
   ano?: number;
-  marca?: string;
   modelo?: string;
+  marca?: string;
   jogador?: string;
-  numero?: number;
+  numero_camisa?: number;
   tamanho?: string;
-  situacao: 'disponivel' | 'vendido' | 'trocado' | 'reservado';
-  valor_compra?: number;
+  cor_principal?: string;
+  condicao?: string;
+  autografada?: boolean;
+  autografo_descricao?: string;
+  valor_compra: number; // NOT NULL in DB
   valor_venda?: number;
-  valor_mercado?: number;
-  lote_id?: number;
+  lucro_calculado?: number;
+  situacao: string; // NOT NULL in DB
+  destino?: string;
   data_aquisicao?: string;
-  origem?: string;
+  data_saida?: string;
   observacoes?: string;
   criado_em: string;
   atualizado_em: string;
+  lote_id?: number;
+  valor_mercado?: number;
+  // For API compatibility with frontend, we also expose 'numero'
+  numero?: number;
 }
 
 export interface Lote {
   id: number;
   nome: string;
-  descricao?: string;
-  data_compra?: string;
-  valor_total?: number;
-  fornecedor?: string;
-  quantidade_itens: number;
+  quantidade_total?: number;
+  quantidade_disponivel?: number;
+  valor_unitario_compra?: number;
+  data_aquisicao?: string;
+  observacoes?: string;
   criado_em: string;
-  atualizado_em: string;
 }
 
 export interface Cliente {
   id: number;
   nome: string;
-  email?: string;
+  apelido?: string;
   telefone?: string;
+  instagram?: string;
   cidade?: string;
-  estado?: string;
+  tipo?: string;
   observacoes?: string;
   criado_em: string;
-  atualizado_em: string;
 }
 
 export interface Venda {
@@ -64,9 +72,8 @@ export interface Troca {
   id: number;
   item_dado_id: number;
   item_recebido_id: number;
-  valor_item_dado?: number;
-  valor_item_recebido?: number;
-  diferenca?: number;
+  valor_adicional?: number;
+  quem_pagou?: string;
   data_troca: string;
   observacoes?: string;
   criado_em: string;
