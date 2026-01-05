@@ -5,21 +5,28 @@ import { z } from 'zod';
 // =============================================================================
 
 export const itemSchema = z.object({
+  tipo: z.string().default('camiseta'), // NOT NULL in DB, default to 'camiseta'
   nome: z.string().min(1, 'Nome é obrigatório'),
   ano: z.number().int().min(1900).max(2100).optional(),
-  marca: z.string().optional(),
   modelo: z.string().optional(),
+  marca: z.string().optional(),
   jogador: z.string().optional(),
-  numero: z.number().int().min(1).max(99).optional(),
+  numero: z.number().int().min(1).max(99).optional(), // API field, will be mapped to numero_camisa
   tamanho: z.string().optional(),
-  situacao: z.enum(['disponivel', 'vendido', 'trocado', 'reservado']).default('disponivel'),
-  valor_compra: z.number().min(0).optional(),
+  cor_principal: z.string().optional(),
+  condicao: z.string().optional(),
+  autografada: z.boolean().optional(),
+  autografo_descricao: z.string().optional(),
+  valor_compra: z.number().min(0).default(0), // NOT NULL in DB
   valor_venda: z.number().min(0).optional(),
-  valor_mercado: z.number().min(0).optional(),
-  lote_id: z.number().int().optional(),
+  lucro_calculado: z.number().optional(),
+  situacao: z.string().default('disponivel'), // NOT NULL in DB
+  destino: z.string().optional(),
   data_aquisicao: z.string().optional(),
-  origem: z.string().optional(),
+  data_saida: z.string().optional(),
   observacoes: z.string().optional(),
+  lote_id: z.number().int().optional(),
+  valor_mercado: z.number().min(0).optional(),
 });
 
 export const vendaSchema = z.object({
@@ -35,18 +42,19 @@ export const vendaSchema = z.object({
 export const trocaSchema = z.object({
   item_dado_id: z.number().int().positive(),
   item_recebido_id: z.number().int().positive(),
-  valor_item_dado: z.number().min(0).optional(),
-  valor_item_recebido: z.number().min(0).optional(),
+  valor_adicional: z.number().optional(),
+  quem_pagou: z.string().optional(),
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
 });
 
 export const loteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  descricao: z.string().optional(),
-  data_compra: z.string().optional(),
-  valor_total: z.number().min(0).optional(),
-  fornecedor: z.string().optional(),
+  quantidade_total: z.number().int().min(0).optional(),
+  quantidade_disponivel: z.number().int().min(0).optional(),
+  valor_unitario_compra: z.number().min(0).optional(),
+  data_aquisicao: z.string().optional(),
+  observacoes: z.string().optional(),
 });
 
 export const wishlistSchema = z.object({

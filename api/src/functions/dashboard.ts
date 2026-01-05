@@ -19,7 +19,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         COUNT(*) as total_itens,
         SUM(CASE WHEN situacao = 'disponivel' THEN 1 ELSE 0 END) as total_disponiveis,
         SUM(CASE WHEN situacao = 'vendido' THEN 1 ELSE 0 END) as total_vendidos,
-        SUM(ISNULL(valor_compra, 0)) as valor_total_investido,
+        SUM(COALESCE(valor_compra, 0)) as valor_total_investido,
         SUM(CASE WHEN situacao = 'disponivel' THEN COALESCE(valor_mercado, valor_venda, 0) ELSE 0 END) as valor_acervo_atual
       FROM itens
     `;
@@ -27,12 +27,12 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     const itensResult = await executeQuery(itensQuery);
     const itensData = itensResult.recordset[0];
 
-    // Get total sales
+    // Get total sales from view
     const vendasQuery = `
       SELECT 
-        SUM(valor_venda) as valor_total_vendas,
-        SUM(lucro) as lucro_total
-      FROM vendas
+        SUM(COALESCE(valor_venda, 0)) as valor_total_vendas,
+        SUM(COALESCE(lucro_calculado, 0)) as lucro_total
+      FROM dbo.vw_historico_vendas
     `;
 
     const vendasResult = await executeQuery(vendasQuery);
@@ -40,7 +40,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
     // Get recent items
     const recentQuery = `
-      SELECT TOP 5 id, nome, ano, marca, valor_mercado, criado_em
+      SELECT TOP 5 id, nome, ano, marca, COALESCE(valor_mercado, valor_venda, 0) as valor_mercado, criado_em
       FROM itens
       ORDER BY criado_em DESC
     `;
@@ -48,23 +48,23 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
     // Get top value items
     const topValueQuery = `
-      SELECT TOP 5 id, nome, ano, jogador, valor_mercado
+      SELECT TOP 5 id, nome, ano, jogador, COALESCE(valor_mercado, valor_venda, 0) as valor_mercado
       FROM itens
       WHERE situacao = 'disponivel'
-      ORDER BY valor_mercado DESC
+      ORDER BY COALESCE(valor_mercado, valor_venda, 0) DESC
     `;
     const topValueResult = await executeQuery(topValueQuery);
 
-    // Get sales by month (last 6 months)
+    // Get sales by month (last 6 months) from view
     const salesByMonthQuery = `
       SELECT 
-        FORMAT(data_venda, 'yyyy-MM') as mes,
+        FORMAT(data_saida, 'yyyy-MM') as mes,
         COUNT(*) as quantidade,
-        SUM(valor_venda) as total_vendas,
-        SUM(lucro) as total_lucro
-      FROM vendas
-      WHERE data_venda >= DATEADD(MONTH, -6, GETDATE())
-      GROUP BY FORMAT(data_venda, 'yyyy-MM')
+        SUM(COALESCE(valor_venda, 0)) as total_vendas,
+        SUM(COALESCE(lucro_calculado, 0)) as total_lucro
+      FROM dbo.vw_historico_vendas
+      WHERE data_saida >= DATEADD(MONTH, -6, GETDATE())
+      GROUP BY FORMAT(data_saida, 'yyyy-MM')
       ORDER BY mes DESC
     `;
     const salesByMonthResult = await executeQuery(salesByMonthQuery);
