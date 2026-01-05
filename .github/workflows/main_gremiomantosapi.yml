@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "api/**"
-      - ".github/workflows/azure_function_app.yml"
+      - ".github/workflows/main_gremiomantosapi.yml"
   workflow_dispatch:
 
 env:
@@ -98,3 +98,4 @@ jobs:
         run: |
           BASE_URL="https://${{ env.FUNCTION_APP_NAME }}.azurewebsites.net"
           curl -s -i "$BASE_URL/api/health" | head -n 30
+
