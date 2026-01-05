@@ -20,7 +20,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         SUM(CASE WHEN situacao = 'disponivel' THEN 1 ELSE 0 END) as total_disponiveis,
         SUM(CASE WHEN situacao = 'vendido' THEN 1 ELSE 0 END) as total_vendidos,
         SUM(ISNULL(valor_compra, 0)) as valor_total_investido,
-        SUM(CASE WHEN situacao = 'disponivel' THEN ISNULL(valor_mercado, valor_venda, 0) ELSE 0 END) as valor_acervo_atual
+        SUM(CASE WHEN situacao = 'disponivel' THEN COALESCE(valor_mercado, valor_venda, 0) ELSE 0 END) as valor_acervo_atual
       FROM itens
     `;
 
