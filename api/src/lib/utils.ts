@@ -127,7 +127,7 @@ export function parseQueryParams(url: string): Record<string, string> {
  * Safely parse JSON from request body
  * Returns parsed JSON or throws an error with proper message
  */
-export async function safeParseJson<T = any>(request: any): Promise<T> {
+export async function safeParseJson<T = any>(request: { json(): Promise<T> }): Promise<T> {
   try {
     return await request.json();
   } catch (error) {
@@ -145,7 +145,8 @@ export function clampPagination(
   perPage: number,
   maxPerPage: number = 100
 ): { page: number; perPage: number } {
-  const clampedPage = Math.max(1, Math.floor(page)) || 1;
-  const clampedPerPage = Math.max(1, Math.min(maxPerPage, Math.floor(perPage))) || 30;
+  // Handle NaN by defaulting to 1 for page and 30 for perPage
+  const clampedPage = isNaN(page) ? 1 : Math.max(1, Math.floor(page));
+  const clampedPerPage = isNaN(perPage) ? 30 : Math.max(1, Math.min(maxPerPage, Math.floor(perPage)));
   return { page: clampedPage, perPage: clampedPerPage };
 }

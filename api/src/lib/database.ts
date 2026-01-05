@@ -1,30 +1,66 @@
 import sql from 'mssql';
 
 /**
+ * Parse SQL connection string to extract credentials
+ * Supports common formats for Server, Database, User Id/ID, and Password
+ */
+function parseConnectionString(connStr: string): {
+  server: string;
+  database: string;
+  user: string;
+  password: string;
+} | null {
+  try {
+    // Parse connection string parts (case-insensitive)
+    const parts: Record<string, string> = {};
+    const pairs = connStr.split(';').filter(p => p.trim());
+    
+    for (const pair of pairs) {
+      const equalIndex = pair.indexOf('=');
+      if (equalIndex > 0) {
+        const key = pair.substring(0, equalIndex).trim().toLowerCase();
+        const value = pair.substring(equalIndex + 1).trim();
+        parts[key] = value;
+      }
+    }
+    
+    // Extract server (may be 'server' or 'data source')
+    const server = parts['server'] || parts['data source'];
+    // Extract database (may be 'database' or 'initial catalog')
+    const database = parts['database'] || parts['initial catalog'];
+    // Extract user (may be 'user id' or 'uid')
+    const user = parts['user id'] || parts['uid'];
+    // Extract password (may be 'password' or 'pwd')
+    const password = parts['password'] || parts['pwd'];
+    
+    if (!server || !database || !user || !password) {
+      return null;
+    }
+    
+    return { server, database, user, password };
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
  * Database configuration with SQL Authentication support
  * Prioritizes SQL_CONNECTION_STRING if available, otherwise builds from individual env vars
  */
 function getDatabaseConfig(): sql.config {
   // Option 1: Use full connection string if provided
-  // Parse it to extract components since mssql doesn't accept connectionString directly
   if (process.env.SQL_CONNECTION_STRING) {
-    const connStr = process.env.SQL_CONNECTION_STRING;
+    const parsed = parseConnectionString(process.env.SQL_CONNECTION_STRING);
     
-    // Extract server, database, user, password from connection string
-    const serverMatch = connStr.match(/Server=([^;]+)/i);
-    const databaseMatch = connStr.match(/Database=([^;]+)/i);
-    const userMatch = connStr.match(/User Id=([^;]+)/i);
-    const passwordMatch = connStr.match(/Password=([^;]+)/i);
-    
-    if (!serverMatch || !databaseMatch || !userMatch || !passwordMatch) {
-      throw new Error('Invalid SQL_CONNECTION_STRING format');
+    if (!parsed) {
+      throw new Error('Invalid SQL_CONNECTION_STRING format. Expected format: Server=<server>;Database=<database>;User Id=<user>;Password=<password>');
     }
     
     return {
-      server: serverMatch[1],
-      database: databaseMatch[1],
-      user: userMatch[1],
-      password: passwordMatch[1],
+      server: parsed.server,
+      database: parsed.database,
+      user: parsed.user,
+      password: parsed.password,
       options: {
         encrypt: true,
         trustServerCertificate: false,
