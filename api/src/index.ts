@@ -9,6 +9,7 @@
 import './functions/health';
 import './functions/itens';
 import './functions/vendas';
+import './functions/transacoes';
 import './functions/trocas';
 import './functions/lotes';
 import './functions/clientes';

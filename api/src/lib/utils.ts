@@ -46,7 +46,30 @@ export const trocaSchema = z.object({
   quem_pagou: z.string().optional(),
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
+  status: z.enum(['ativa', 'cancelada']).optional(),
 });
+
+export const transacaoSchema = z.object({
+  tipo_transacao: z.enum(['venda', 'compra', 'avaliacao']),
+  item_id: z.number().int().positive(),
+  cliente_id: z.number().int().positive().optional(),
+  valor: z.number().min(0),
+  data_transacao: z.string().optional(),
+  forma_pagamento: z.string().optional(),
+  observacoes: z.string().optional(),
+}).refine(
+  (data) => {
+    // Sale transactions require cliente_id
+    if (data.tipo_transacao === 'venda' && !data.cliente_id) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'cliente_id é obrigatório para transações de venda',
+    path: ['cliente_id'],
+  }
+);
 
 export const loteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
