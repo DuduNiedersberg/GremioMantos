@@ -77,6 +77,21 @@ export interface Troca {
   data_troca: string;
   observacoes?: string;
   criado_em: string;
+  status: 'ativa' | 'cancelada';
+  cancelada_em?: string;
+}
+
+export interface Transacao {
+  id: number;
+  tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+  item_id: number;
+  cliente_id?: number;
+  valor: number;
+  data_transacao: string;
+  forma_pagamento?: string;
+  observacoes?: string;
+  criado_em: string;
+  atualizado_em: string;
 }
 
 export interface WishlistItem {

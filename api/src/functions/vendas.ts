@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { clampPagination } from '../lib/utils';
+import { clampPagination, safeParseJson } from '../lib/utils';
 
 async function vendasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
@@ -77,12 +77,68 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // POST /api/vendas - Not implemented (no vendas table in production)
+    // POST /api/vendas - Backward compatible: create sale via transacoes
     if (method === 'POST') {
+      const body: any = await safeParseJson(request);
+      
+      // Validate required fields for a sale
+      if (!body.item_id || !body.cliente_id || !body.valor) {
+        return successResponse({
+          error: 'Campos obrigatórios faltando',
+          message: 'item_id, cliente_id e valor são obrigatórios para criar uma venda',
+        }, 400, origin);
+      }
+
+      const dataTransacao = body.data_venda || new Date().toISOString().split('T')[0];
+
+      // Create transaction
+      const insertQuery = `
+        INSERT INTO transacoes (
+          tipo_transacao, item_id, cliente_id, valor, data_transacao,
+          forma_pagamento, observacoes
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          'venda', @item_id, @cliente_id, @valor, @data_transacao,
+          @forma_pagamento, @observacoes
+        )
+      `;
+
+      const result = await executeQuery(insertQuery, {
+        item_id: body.item_id,
+        cliente_id: body.cliente_id,
+        valor: body.valor || body.valor_venda,
+        data_transacao: dataTransacao,
+        forma_pagamento: body.forma_pagamento,
+        observacoes: body.observacoes,
+      });
+
+      // Update item status
+      const itemQuery = 'SELECT valor_compra FROM itens WHERE id = @item_id';
+      const itemResult = await executeQuery<{ valor_compra: number }>(itemQuery, { item_id: body.item_id });
+      const valorCompra = itemResult.recordset[0]?.valor_compra || 0;
+
+      const updateItemQuery = `
+        UPDATE itens
+        SET situacao = 'vendido',
+            destino = 'venda',
+            data_saida = @data_saida,
+            valor_venda = @valor_venda,
+            lucro_calculado = @lucro_calculado
+        WHERE id = @item_id
+      `;
+
+      await executeQuery(updateItemQuery, {
+        item_id: body.item_id,
+        data_saida: dataTransacao,
+        valor_venda: body.valor || body.valor_venda,
+        lucro_calculado: (body.valor || body.valor_venda) - valorCompra,
+      });
+
       return successResponse({
-        error: 'Not Implemented',
-        message: 'Creating sales via this endpoint is not supported. Sales are tracked through the itens table (situacao=vendido).',
-      }, 501, origin);
+        ...result.recordset[0],
+        message: 'Venda criada com sucesso via transações',
+      }, 201, origin);
     }
 
     // PUT /api/vendas/{id} - Not implemented
