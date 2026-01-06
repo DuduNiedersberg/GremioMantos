@@ -20,8 +20,13 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // POST /api/wishlist/{id}/converter - Convert wishlist item to actual item
     if (method === 'POST' && id && action === 'converter') {
-      // Get the wishlist item
-      const getQuery = 'SELECT * FROM wishlist WHERE id = @id';
+      // Get the wishlist item with only needed columns
+      const getQuery = `
+        SELECT id, nome, ano, marca, modelo, jogador, tamanho, 
+               valor_estimado, observacoes 
+        FROM wishlist 
+        WHERE id = @id
+      `;
       const getResult = await executeQuery<WishlistItem>(getQuery, { id });
 
       if (getResult.recordset.length === 0) {

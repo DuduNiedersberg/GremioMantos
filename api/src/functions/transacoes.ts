@@ -138,13 +138,23 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
     if (method === 'PUT' && id) {
       const body: any = await safeParseJson(request);
       
-      // We can't use partial() with refined schemas, so validate manually
+      // Manual validation for partial updates (can't use partial() with refined schemas)
+      type PartialTransacao = Partial<{
+        tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+        item_id: number;
+        cliente_id: number;
+        valor: number;
+        data_transacao: string;
+        forma_pagamento: string;
+        observacoes: string;
+      }>;
+      
       const allowedFields = ['tipo_transacao', 'item_id', 'cliente_id', 'valor', 'data_transacao', 'forma_pagamento', 'observacoes'];
-      const validated: any = {};
+      const validated: PartialTransacao = {};
       
       for (const key of allowedFields) {
         if (key in body) {
-          validated[key] = body[key];
+          validated[key as keyof PartialTransacao] = body[key];
         }
       }
 

@@ -43,8 +43,9 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       `;
       const cancelResult = await executeQuery<Troca>(cancelQuery, { id });
 
-      // Revert item statuses
-      // item_dado_id: restore to disponivel (since it was given away)
+      // Revert item statuses to consistent state
+      // For canceled trades, both items should return to 'disponivel' state
+      // item_dado_id: Was given away, restore to disponivel
       await executeQuery(`
         UPDATE itens
         SET situacao = 'disponivel',
@@ -53,8 +54,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         WHERE id = @id
       `, { id: trade.item_dado_id });
 
-      // item_recebido_id: mark as trocado/indisponivel (since it was received but trade is now canceled)
-      // Note: Business logic may vary here - keeping it simple by marking as disponivel
+      // item_recebido_id: Was received, restore to disponivel
       await executeQuery(`
         UPDATE itens
         SET situacao = 'disponivel',

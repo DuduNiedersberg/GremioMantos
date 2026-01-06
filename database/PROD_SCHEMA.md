@@ -368,13 +368,19 @@ WHERE id = @id;
 ## Migration Notes
 
 ### Required Migrations for Production
-1. `005_add_transacoes_table.sql` - Creates transacoes table
-2. `006_add_trocas_status.sql` - Adds status and cancelada_em to trocas
 
-### Existing Migrations
+These migrations add new functionality required by the CRUD API:
+
+1. `005_add_transacoes_table.sql` - Creates transacoes table for tracking all transaction types
+2. `006_add_trocas_status.sql` - Adds status tracking to trocas for soft-cancel support
+
+### Previously Applied Migrations
+
+These migrations create supporting tables:
+
 1. `001_add_wishlist.sql` - Creates wishlist table
 2. `002_add_historico_precos.sql` - Creates historico_precos table
 3. `003_add_imagens.sql` - Creates imagens table
-4. `004_create_missing_tables_prod.sql` - Creates missing tables in production
+4. `004_create_missing_tables_prod.sql` - Creates missing tables in production (aggregates 001-003)
 
 All migrations are idempotent and can be run multiple times safely.
