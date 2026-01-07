@@ -55,7 +55,6 @@ async function dashboardHandler(request:  HttpRequest, context: InvocationContex
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
         SUM(COALESCE(lucro_calculado, 0)) as total_lucro
       FROM dbo. vw_historico_vendas
-      WHERE data_saida >= DATEADD(MONTH, -6, GETDATE())
       GROUP BY FORMAT(data_saida, 'yyyy-MM')
       ORDER BY mes DESC
     `;
