@@ -201,19 +201,19 @@ export default function LotesList() {
             <h3 className="font-bold text-lg mb-3">{lote.nome}</h3>
             
             <div className="space-y-2 text-sm">
-              {lote.quantidade_total !== undefined && (
+              {lote.quantidade_total != null && (
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Quantidade Total:</span>
                   <span className="font-medium">{lote.quantidade_total}</span>
                 </div>
               )}
-              {lote.quantidade_disponivel !== undefined && (
+              {lote.quantidade_disponivel != null && (
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Disponível:</span>
                   <span className="font-medium text-green-600">{lote.quantidade_disponivel}</span>
                 </div>
               )}
-              {lote.valor_unitario_compra !== undefined && (
+              {lote.valor_unitario_compra != null && (
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Valor Unitário:</span>
                   <span className="font-medium">{formatCurrency(lote.valor_unitario_compra)}</span>

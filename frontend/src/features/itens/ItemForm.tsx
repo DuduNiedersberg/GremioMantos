@@ -102,7 +102,7 @@ export default function ItemForm() {
       
       const dataToSave = {
         ...formData,
-        valor_compra: formData.valor_compra || 0,
+        valor_compra: formData.valor_compra ?? 0,
       };
 
       if (isEditing && id) {

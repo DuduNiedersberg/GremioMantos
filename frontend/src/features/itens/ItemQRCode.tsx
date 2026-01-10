@@ -122,7 +122,7 @@ export default function ItemQRCode({ item, onClose }: ItemQRCodeProps) {
                   <Download className="w-4 h-4 mr-2" />
                   Baixar
                 </Button>
-                {typeof navigator !== 'undefined' && 'share' in navigator && (
+                {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
                   <Button variant="secondary" onClick={handleShare}>
                     <Share2 className="w-4 h-4 mr-2" />
                     Compartilhar

@@ -214,7 +214,7 @@ export default function ClientesList() {
                   <td className="py-3 px-4">
                     {cliente.instagram ? (
                       <a 
-                        href={`https://instagram.com/${cliente.instagram.replace('@', '')}`}
+                        href={`https://instagram.com/${encodeURIComponent(cliente.instagram.replace(/^@/, '').replace(/[^a-zA-Z0-9_.]/g, ''))}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-gremio-celeste hover:underline"

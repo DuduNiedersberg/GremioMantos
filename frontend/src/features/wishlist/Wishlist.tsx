@@ -10,6 +10,12 @@ import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
 import { PRIORIDADES, WISHLIST_STATUS, TAMANHOS, MARCAS, MODELOS } from '../../shared/utils/constants';
 
+const STATUS_COLORS: Record<string, string> = {
+  ativo: 'bg-gremio-celeste',
+  encontrado: 'bg-green-500',
+  desistido: 'bg-neutral-500',
+};
+
 export default function Wishlist() {
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -262,7 +268,7 @@ export default function Wishlist() {
                     {prioridade?.label}
                   </span>
                   {item.status !== 'ativo' && (
-                    <span className={`badge ${item.status === 'encontrado' ? 'bg-green-500' : 'bg-neutral-500'} text-white text-xs`}>
+                    <span className={`badge ${STATUS_COLORS[item.status] ?? 'bg-neutral-500'} text-white text-xs`}>
                       {statusObj?.label}
                     </span>
                   )}
