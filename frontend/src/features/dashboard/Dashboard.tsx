@@ -19,7 +19,25 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const response = await getDashboard();
-      setMetrics(response.data.data.metrics);
+      const apiMetrics = response.data.data?.metrics || response.data.data || response.data;
+      
+      // Map API fields to component expected fields
+      setMetrics({
+        total_itens: apiMetrics.total_itens ?? 0,
+        total_disponiveis: apiMetrics.itens_estoque ?? apiMetrics.total_disponiveis ?? 0,
+        total_vendidos: apiMetrics.itens_vendidos ?? apiMetrics.total_vendidos ?? 0,
+        valor_acervo_atual: apiMetrics.capital_estoque ?? apiMetrics.valor_acervo_atual ?? 0,
+        valor_total_investido: apiMetrics.total_investido_vendas ?? apiMetrics.valor_total_investido ?? 0,
+        valor_total_vendas: apiMetrics.total_vendas ?? apiMetrics.valor_total_vendas ?? 0,
+        lucro_total: apiMetrics.lucro_total ?? 0,
+        itens_estoque: apiMetrics.itens_estoque ?? 0,
+        itens_vendidos: apiMetrics.itens_vendidos ?? 0,
+        itens_trocados: apiMetrics.itens_trocados ?? 0,
+        capital_estoque: apiMetrics.capital_estoque ?? 0,
+        total_investido_vendas: apiMetrics.total_investido_vendas ?? 0,
+        total_vendas: apiMetrics.total_vendas ?? 0,
+        margem_media: apiMetrics.margem_media ?? 0,
+      });
     } catch (err) {
       showError('Erro ao carregar dashboard');
       console.error(err);
