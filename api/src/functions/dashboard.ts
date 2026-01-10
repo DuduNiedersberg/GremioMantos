@@ -13,23 +13,59 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
   try {
     // Get metrics from view
-    const metricsQuery = 'SELECT TOP 1 * FROM dbo. vw_dashboard_metricas';
+    const metricsQuery = 'SELECT TOP 1 * FROM dbo.vw_dashboard_metricas';
     const metricsResult = await executeQuery(metricsQuery);
     
-    const metricsData = metricsResult. recordset[0] || {
-      total_itens: 0,
-      itens_estoque: 0,
-      itens_vendidos: 0,
-      itens_trocados: 0,
-      capital_estoque: 0,
-      total_investido_vendas: 0,
-      total_vendas: 0,
-      lucro_total: 0,
-      margem_media: 0,
+    const viewData = metricsResult.recordset[0];
+
+    if (!viewData) {
+      // If view returns no data, return zeros
+      const metrics = {
+        total_itens: 0,
+        total_disponiveis: 0,
+        itens_estoque: 0,
+        total_vendidos: 0,
+        itens_trocados: 0,
+        capital_estoque: 0,
+        total_investido_vendas: 0,
+        valor_total_investido: 0,
+        total_vendas: 0,
+        valor_total_vendas: 0,
+        lucro_total:  0,
+        margem_media: 0,
+        valor_acervo_atual:  0,
+      };
+
+      return successResponse({ metrics }, 200, origin);
+    }
+
+    // Map view column names to frontend-expected names
+    // View columns: total_itens, itens_estoque, itens_vendidos, itens_trocados, capital_estoque, total_investido_vendas, total_vendas, lucro_total, margem_media
+    const metrics = {
+      // Core counts
+      total_itens: Number(viewData.total_itens) || 0,
+      total_disponiveis: Number(viewData.itens_estoque) || 0, // Map itens_estoque → total_disponiveis
+      itens_estoque: Number(viewData.itens_estoque) || 0,     // Also keep original name
+      total_vendidos: Number(viewData.itens_vendidos) || 0,   // Map itens_vendidos → total_vendidos
+      itens_vendidos: Number(viewData.itens_vendidos) || 0,   // Also keep original
+      itens_trocados:  Number(viewData.itens_trocados) || 0,
+      
+      // Values
+      capital_estoque: Number(viewData.capital_estoque) || 0,
+      valor_acervo_atual: Number(viewData.capital_estoque) || 0, // Map capital_estoque → valor_acervo_atual
+      
+      total_investido_vendas: Number(viewData.total_investido_vendas) || 0,
+      valor_total_investido: Number(viewData.total_investido_vendas) || 0, // Map for compatibility
+      
+      total_vendas: Number(viewData.total_vendas) || 0,
+      valor_total_vendas:  Number(viewData.total_vendas) || 0, // Map for compatibility
+      
+      lucro_total: Number(viewData. lucro_total) || 0,
+      margem_media:  Number(viewData.margem_media) || 0,
     };
 
-    // Get recent items from available inventory view
-    // vw_inventario_disponivel columns: id, nome, ano, tipo, marca, jogador, valor_compra, condicao, autografada, data_aquisicao, lote_id
+    // Optional: Get recent items, top value, sales by month (frontend doesn't use them yet)
+    // Keeping these for future use or if you want to add charts/lists later
     const recentQuery = `
       SELECT TOP 5 id, nome, ano, marca, valor_compra, data_aquisicao
       FROM dbo.vw_inventario_disponivel
@@ -37,8 +73,6 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     `;
     const recentResult = await executeQuery(recentQuery);
 
-    // Get top value items from available inventory view
-    // Use valor_compra as proxy since valor_mercado doesn't exist in this view
     const topValueQuery = `
       SELECT TOP 5 id, nome, ano, jogador, valor_compra
       FROM dbo.vw_inventario_disponivel
@@ -46,8 +80,6 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     `;
     const topValueResult = await executeQuery(topValueQuery);
 
-    // Get sales by month - REMOVE 6-month filter to get all data
-    // vw_historico_vendas columns: id, nome, ano, tipo, marca, jogador, valor_compra, valor_venda, lucro_calculado, data_saida, destino, cliente_id, cliente_nome
     const salesByMonthQuery = `
       SELECT 
         FORMAT(data_saida, 'yyyy-MM') as mes,
@@ -60,19 +92,6 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
       ORDER BY mes DESC
     `;
     const salesByMonthResult = await executeQuery(salesByMonthQuery);
-
-    // Map metrics ensuring numeric types (not strings)
-    const metrics = {
-      total_itens: Number(metricsData.total_itens) || 0,
-      itens_estoque: Number(metricsData.itens_estoque) || 0,
-      itens_vendidos: Number(metricsData.itens_vendidos) || 0,
-      itens_trocados: Number(metricsData.itens_trocados) || 0,
-      capital_estoque:  Number(metricsData.capital_estoque) || 0,
-      total_investido_vendas: Number(metricsData.total_investido_vendas) || 0,
-      total_vendas: Number(metricsData.total_vendas) || 0,
-      lucro_total: Number(metricsData.lucro_total) || 0,
-      margem_media: Number(metricsData.margem_media) || 0,
-    };
 
     return successResponse({
       metrics,
