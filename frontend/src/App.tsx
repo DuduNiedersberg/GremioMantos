@@ -3,6 +3,7 @@ import Layout from './shared/components/Layout';
 import Dashboard from './features/dashboard/Dashboard';
 import ItemList from './features/itens/ItemList';
 import ItemDetails from './features/itens/ItemDetails';
+import ItemForm from './features/itens/ItemForm';
 import VendaRegistro from './features/vendas/VendaRegistro';
 import VendaHistorico from './features/vendas/VendaHistorico';
 import TrocaRegistro from './features/trocas/TrocaRegistro';
@@ -20,7 +21,9 @@ function App() {
           
           {/* Items */}
           <Route path="itens" element={<ItemList />} />
+          <Route path="itens/novo" element={<ItemForm />} />
           <Route path="itens/:id" element={<ItemDetails />} />
+          <Route path="itens/:id/editar" element={<ItemForm />} />
           
           {/* Sales */}
           <Route path="vendas" element={<VendaHistorico />} />

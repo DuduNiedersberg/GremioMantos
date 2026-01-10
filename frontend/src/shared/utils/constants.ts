@@ -69,6 +69,30 @@ export const TIPOS_HISTORICO = [
   { value: 'avaliacao', label: 'Avaliação', color: 'text-orange-600' },
 ] as const;
 
+export const TIPOS_ITEM = [
+  { value: 'oficial', label: 'Oficial' },
+  { value: 'torcedor', label: 'Torcedor' },
+  { value: 'jogador', label: 'De Jogo/Jogador' },
+  { value: 'treino', label: 'Treino' },
+  { value: 'retro', label: 'Retrô' },
+  { value: 'especial', label: 'Especial' },
+] as const;
+
+export const CONDICOES = [
+  { value: 'nova', label: 'Nova (com etiqueta)' },
+  { value: 'seminova', label: 'Seminova' },
+  { value: 'usada_boa', label: 'Usada - Bom estado' },
+  { value: 'usada_regular', label: 'Usada - Estado regular' },
+  { value: 'usada_ruim', label: 'Usada - Estado ruim' },
+] as const;
+
+export const TIPOS_CLIENTE = [
+  { value: 'comprador', label: 'Comprador' },
+  { value: 'vendedor', label: 'Vendedor' },
+  { value: 'trocador', label: 'Trocador' },
+  { value: 'ambos', label: 'Comprador e Vendedor' },
+] as const;
+
 export const APP_NAME = 'Bolicho do Grêmio';
 export const APP_SUBTITLE = 'Vale dos Sinos';
 export const APP_VERSION = '1.0.0';

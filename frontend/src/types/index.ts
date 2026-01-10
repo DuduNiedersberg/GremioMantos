@@ -4,19 +4,27 @@
 
 export interface Item {
   id: number;
+  tipo?: string;
   nome: string;
   ano?: number;
   marca?: string;
   modelo?: string;
   jogador?: string;
-  numero?: number;
+  numero?: number; // API field (backend maps to numero_camisa)
   tamanho?: string;
+  cor_principal?: string;
+  condicao?: string;
+  autografada?: boolean;
+  autografo_descricao?: string;
   situacao: 'disponivel' | 'vendido' | 'trocado' | 'reservado';
+  destino?: string;
   valor_compra?: number;
   valor_venda?: number;
+  lucro_calculado?: number;
   valor_mercado?: number;
   lote_id?: number;
   data_aquisicao?: string;
+  data_saida?: string;
   origem?: string;
   observacoes?: string;
   criado_em: string;
@@ -28,25 +36,47 @@ export interface Lote {
   nome: string;
   descricao?: string;
   data_compra?: string;
+  data_aquisicao?: string;
   valor_total?: number;
+  valor_unitario_compra?: number;
+  quantidade_total?: number;
+  quantidade_disponivel?: number;
   fornecedor?: string;
-  quantidade_itens: number;
+  quantidade_itens?: number;
+  observacoes?: string;
   criado_em: string;
-  atualizado_em: string;
+  atualizado_em?: string;
   itens?: Item[];
 }
 
 export interface Cliente {
   id: number;
   nome: string;
+  apelido?: string;
   email?: string;
   telefone?: string;
+  instagram?: string;
   cidade?: string;
   estado?: string;
+  tipo?: string;
   observacoes?: string;
   criado_em: string;
-  atualizado_em: string;
+  atualizado_em?: string;
   vendas?: Venda[];
+}
+
+export interface Transacao {
+  id: number;
+  tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+  item_id: number;
+  cliente_id?: number;
+  valor: number;
+  data_transacao: string;
+  forma_pagamento?: string;
+  observacoes?: string;
+  criado_em: string;
+  item_nome?: string;
+  cliente_nome?: string;
 }
 
 export interface Venda {
@@ -70,9 +100,13 @@ export interface Troca {
   item_recebido_id: number;
   valor_item_dado?: number;
   valor_item_recebido?: number;
+  valor_adicional?: number;
+  quem_pagou?: string;
   diferenca?: number;
   data_troca: string;
   observacoes?: string;
+  status: 'ativa' | 'cancelada';
+  cancelada_em?: string;
   criado_em: string;
   item_dado_nome?: string;
   item_recebido_nome?: string;
@@ -108,11 +142,18 @@ export interface HistoricoPreco {
 export interface DashboardMetrics {
   total_itens: number;
   total_disponiveis: number;
+  itens_estoque?: number;
   total_vendidos: number;
+  itens_vendidos?: number;
+  itens_trocados?: number;
+  capital_estoque?: number;
+  valor_acervo_atual: number;
+  total_investido_vendas?: number;
   valor_total_investido: number;
+  total_vendas?: number;
   valor_total_vendas: number;
   lucro_total: number;
-  valor_acervo_atual: number;
+  margem_media?: number;
 }
 
 export interface ApiResponse<T = any> {
