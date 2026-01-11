@@ -44,20 +44,20 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       const cancelResult = await executeQuery<Troca>(cancelQuery, { id });
 
       // Revert item statuses to consistent state
-      // For canceled trades, both items should return to 'disponivel' state
-      // item_dado_id: Was given away, restore to disponivel
+      // For canceled trades, both items should return to 'estoque' state
+      // item_dado_id: Was given away, restore to estoque
       await executeQuery(`
         UPDATE itens
-        SET situacao = 'disponivel',
+        SET situacao = 'estoque',
             destino = NULL,
             data_saida = NULL
         WHERE id = @id
       `, { id: trade.item_dado_id });
 
-      // item_recebido_id: Was received, restore to disponivel
+      // item_recebido_id: Was received, restore to estoque
       await executeQuery(`
         UPDATE itens
-        SET situacao = 'disponivel',
+        SET situacao = 'estoque',
             destino = NULL
         WHERE id = @id
       `, { id: trade.item_recebido_id });
@@ -141,7 +141,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       // Update item_dado_id status
       await executeQuery(`
         UPDATE itens 
-        SET situacao = 'trocado', 
+        SET situacao = 'trocada', 
             destino = 'troca', 
             data_saida = @data_saida 
         WHERE id = @id
@@ -153,7 +153,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       // Update item_recebido_id status
       await executeQuery(`
         UPDATE itens 
-        SET situacao = 'disponivel', 
+        SET situacao = 'estoque', 
             destino = NULL, 
             data_saida = NULL,
             data_aquisicao = @data_aquisicao
@@ -211,7 +211,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         // Revert item statuses
         await executeQuery(`
           UPDATE itens
-          SET situacao = 'disponivel',
+          SET situacao = 'estoque',
               destino = NULL,
               data_saida = NULL
           WHERE id = @id
@@ -219,7 +219,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
         await executeQuery(`
           UPDATE itens
-          SET situacao = 'disponivel',
+          SET situacao = 'estoque',
               destino = NULL
           WHERE id = @id
         `, { id: trade.item_recebido_id });

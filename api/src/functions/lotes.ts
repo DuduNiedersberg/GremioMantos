@@ -90,27 +90,57 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // PUT /api/lotes/{id} - Update batch
     if (method === 'PUT' && id) {
-      const body = await safeParseJson(request);
-      const validated = loteSchema.partial().parse(body);
+      const body: any = await safeParseJson(request);
+      
+      // Manual validation for partial updates (can't use partial() with refined schemas)
+      const allowedFields = ['nome', 'quantidade_total', 'quantidade_disponivel', 'valor_unitario_compra', 'data_aquisicao', 'observacoes'];
+      const validated: any = {};
+      
+      for (const key of allowedFields) {
+        if (key in body) {
+          validated[key] = body[key];
+        }
+      }
+      
+      // Validate quantity constraint if both fields are present or being updated
+      const existingQuery = 'SELECT quantidade_total, quantidade_disponivel FROM lotes WHERE id = @id';
+      const existingResult = await executeQuery<Lote>(existingQuery, { id });
+      
+      if (existingResult.recordset.length === 0) {
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+      }
+      
+      const existing = existingResult.recordset[0];
+      const finalQuantidadeTotal = validated.quantidade_total !== undefined ? validated.quantidade_total : existing.quantidade_total;
+      const finalQuantidadeDisponivel = validated.quantidade_disponivel !== undefined ? validated.quantidade_disponivel : existing.quantidade_disponivel;
+      
+      if (finalQuantidadeDisponivel !== undefined && 
+          finalQuantidadeTotal !== undefined && 
+          finalQuantidadeDisponivel > finalQuantidadeTotal) {
+        return successResponse({
+          error: 'Validação falhou',
+          message: 'quantidade_disponivel não pode ser maior que quantidade_total',
+        }, 400, origin);
+      }
 
       const setClauses = Object.keys(validated)
         .map(key => `${key} = @${key}`)
         .join(', ');
 
-      const query = `
-        UPDATE lotes 
-        SET ${setClauses}
-        OUTPUT INSERTED.*
-        WHERE id = @id
-      `;
+      if (setClauses) {
+        const query = `
+          UPDATE lotes 
+          SET ${setClauses}
+          OUTPUT INSERTED.*
+          WHERE id = @id
+        `;
 
-      const result = await executeQuery<Lote>(query, { ...validated, id });
+        const result = await executeQuery<Lote>(query, { ...validated, id });
 
-      if (result.recordset.length === 0) {
-        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+        return successResponse(result.recordset[0], 200, origin);
       }
 
-      return successResponse(result.recordset[0], 200, origin);
+      return successResponse(existingResult.recordset[0], 200, origin);
     }
 
     // DELETE /api/lotes/{id} - Delete batch

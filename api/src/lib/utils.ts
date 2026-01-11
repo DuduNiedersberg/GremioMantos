@@ -4,8 +4,18 @@ import { z } from 'zod';
 // VALIDATION SCHEMAS
 // =============================================================================
 
+export const clienteSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  apelido: z.string().optional(),
+  telefone: z.string().optional(),
+  instagram: z.string().optional(),
+  cidade: z.string().optional(),
+  tipo: z.enum(['cliente', 'fornecedor', 'colecionador', 'ambos']).default('cliente'),
+  observacoes: z.string().optional(),
+});
+
 export const itemSchema = z.object({
-  tipo: z.string().default('camiseta'), // NOT NULL in DB, default to 'camiseta'
+  tipo: z.enum(['camiseta', 'jaqueta', 'colete', 'treino', 'livro', 'outro']).default('camiseta'),
   nome: z.string().min(1, 'Nome é obrigatório'),
   ano: z.number().int().min(1900).max(2100).optional(),
   modelo: z.string().optional(),
@@ -14,13 +24,13 @@ export const itemSchema = z.object({
   numero: z.number().int().min(1).max(99).optional(), // API field, will be mapped to numero_camisa
   tamanho: z.string().optional(),
   cor_principal: z.string().optional(),
-  condicao: z.string().optional(),
+  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).default('usada'),
   autografada: z.boolean().optional(),
   autografo_descricao: z.string().optional(),
   valor_compra: z.number().min(0).default(0), // NOT NULL in DB
   valor_venda: z.number().min(0).optional(),
   lucro_calculado: z.number().optional(),
-  situacao: z.string().default('disponivel'), // NOT NULL in DB
+  situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque'),
   destino: z.string().optional(),
   data_aquisicao: z.string().optional(),
   data_saida: z.string().optional(),
@@ -43,14 +53,14 @@ export const trocaSchema = z.object({
   item_dado_id: z.number().int().positive(),
   item_recebido_id: z.number().int().positive(),
   valor_adicional: z.number().optional(),
-  quem_pagou: z.string().optional(),
+  quem_pagou: z.enum(['nos', 'cliente']).optional(),
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
   status: z.enum(['ativa', 'cancelada']).optional(),
 });
 
 export const transacaoSchema = z.object({
-  tipo_transacao: z.enum(['venda', 'compra', 'avaliacao']),
+  tipo_transacao: z.enum(['compra', 'venda', 'troca']),
   item_id: z.number().int().positive(),
   cliente_id: z.number().int().positive().optional(),
   valor: z.number().min(0),
@@ -78,7 +88,20 @@ export const loteSchema = z.object({
   valor_unitario_compra: z.number().min(0).optional(),
   data_aquisicao: z.string().optional(),
   observacoes: z.string().optional(),
-});
+}).refine(
+  (data) => {
+    if (data.quantidade_disponivel !== undefined && 
+        data.quantidade_total !== undefined && 
+        data.quantidade_disponivel > data.quantidade_total) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'quantidade_disponivel não pode ser maior que quantidade_total',
+    path: ['quantidade_disponivel'],
+  }
+);
 
 export const wishlistSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),

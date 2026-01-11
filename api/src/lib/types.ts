@@ -4,7 +4,7 @@
 
 export interface Item {
   id: number;
-  tipo: string; // NOT NULL in DB
+  tipo: 'camiseta' | 'jaqueta' | 'colete' | 'treino' | 'livro' | 'outro';
   nome: string;
   ano?: number;
   modelo?: string;
@@ -13,13 +13,13 @@ export interface Item {
   numero_camisa?: number;
   tamanho?: string;
   cor_principal?: string;
-  condicao?: string;
+  condicao?: 'nova' | 'seminova' | 'usada' | 'vintage';
   autografada?: boolean;
   autografo_descricao?: string;
   valor_compra: number; // NOT NULL in DB
   valor_venda?: number;
   lucro_calculado?: number;
-  situacao: string; // NOT NULL in DB
+  situacao: 'estoque' | 'vendida' | 'trocada' | 'baixada_colecao';
   destino?: string;
   data_aquisicao?: string;
   data_saida?: string;
@@ -50,7 +50,7 @@ export interface Cliente {
   telefone?: string;
   instagram?: string;
   cidade?: string;
-  tipo?: string;
+  tipo?: 'cliente' | 'fornecedor' | 'colecionador' | 'ambos';
   observacoes?: string;
   criado_em: string;
 }
@@ -73,7 +73,7 @@ export interface Troca {
   item_dado_id: number;
   item_recebido_id: number;
   valor_adicional?: number;
-  quem_pagou?: string;
+  quem_pagou?: 'nos' | 'cliente';
   data_troca: string;
   observacoes?: string;
   criado_em: string;
@@ -83,7 +83,7 @@ export interface Troca {
 
 export interface Transacao {
   id: number;
-  tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+  tipo_transacao: 'compra' | 'venda' | 'troca';
   item_id: number;
   cliente_id?: number;
   valor: number;

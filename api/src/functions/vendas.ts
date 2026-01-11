@@ -120,7 +120,7 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
 
       const updateItemQuery = `
         UPDATE itens
-        SET situacao = 'vendido',
+        SET situacao = 'vendida',
             destino = 'venda',
             data_saida = @data_saida,
             valor_venda = @valor_venda,

@@ -47,7 +47,7 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
         OUTPUT INSERTED.*
         VALUES (
           'camiseta', @nome, @ano, @marca, @modelo, @jogador, @tamanho,
-          @valor_compra, 'disponivel', @observacoes
+          @valor_compra, 'estoque', @observacoes
         )
       `;
 

@@ -3,18 +3,7 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { Cliente } from '../lib/types';
-import { z } from 'zod';
-import { safeParseJson, clampPagination } from '../lib/utils';
-
-const clienteSchema = z.object({
-  nome: z.string().min(1, 'Nome é obrigatório'),
-  apelido: z.string().optional(),
-  telefone: z.string().optional(),
-  instagram: z.string().optional(),
-  cidade: z.string().optional(),
-  tipo: z.string().optional(),
-  observacoes: z.string().optional(),
-});
+import { clienteSchema, safeParseJson, clampPagination } from '../lib/utils';
 
 async function clientesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
@@ -137,6 +126,19 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
     // DELETE /api/clientes/{id} - Delete customer
     if (method === 'DELETE' && id) {
+      // Check FK: transacoes
+      const checkTransacoes = await executeQuery<{ count: number }>(
+        'SELECT COUNT(*) as count FROM transacoes WHERE cliente_id = @id',
+        { id }
+      );
+      
+      if (checkTransacoes.recordset[0].count > 0) {
+        return successResponse({
+          error: 'Não é possível excluir',
+          message: `Este cliente possui ${checkTransacoes.recordset[0].count} transação(ões). Remova as transações primeiro.`,
+        }, 409, origin);
+      }
+      
       const query = 'DELETE FROM clientes WHERE id = @id';
       await executeQuery(query, { id });
       return successResponse({ message: 'Cliente excluído com sucesso' }, 200, origin);
