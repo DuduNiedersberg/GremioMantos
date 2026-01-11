@@ -135,14 +135,14 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         INSERT INTO itens (
           tipo, nome, ano, modelo, marca, jogador, numero_camisa, tamanho,
           cor_principal, condicao, autografada, autografo_descricao,
-          valor_compra, valor_venda, lucro_calculado, situacao, destino,
+          valor_compra, valor_venda, situacao, destino,
           data_aquisicao, data_saida, observacoes, lote_id, valor_mercado
         ) 
         OUTPUT INSERTED.*
         VALUES (
           @tipo, @nome, @ano, @modelo, @marca, @jogador, @numero_camisa, @tamanho,
           @cor_principal, @condicao, @autografada, @autografo_descricao,
-          @valor_compra, @valor_venda, @lucro_calculado, @situacao, @destino,
+          @valor_compra, @valor_venda, @situacao, @destino,
           @data_aquisicao, @data_saida, @observacoes, @lote_id, @valor_mercado
         )
       `;
