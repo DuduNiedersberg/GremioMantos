@@ -115,7 +115,7 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
 
         const updateItemQuery = `
           UPDATE itens
-          SET situacao = 'vendido',
+          SET situacao = 'vendida',
               destino = 'venda',
               data_saida = @data_saida,
               valor_venda = @valor_venda,
@@ -140,7 +140,7 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       
       // Manual validation for partial updates (can't use partial() with refined schemas)
       type PartialTransacao = Partial<{
-        tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+        tipo_transacao: 'compra' | 'venda' | 'troca';
         item_id: number;
         cliente_id: number;
         valor: number;
@@ -238,7 +238,7 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
         if (otherSalesResult.recordset[0].count === 0) {
           const revertItemQuery = `
             UPDATE itens
-            SET situacao = 'disponivel',
+            SET situacao = 'estoque',
                 destino = NULL,
                 data_saida = NULL,
                 valor_venda = NULL,

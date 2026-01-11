@@ -198,6 +198,28 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // DELETE /api/itens/{id} - Delete item
     if (method === 'DELETE' && id) {
+      // Check FK: transacoes
+      const checkTransacoes = await executeQuery<{ count: number }>(
+        'SELECT COUNT(*) as count FROM transacoes WHERE item_id = @id',
+        { id }
+      );
+      
+      // Check FK: trocas
+      const checkTrocas = await executeQuery<{ count: number }>(
+        'SELECT COUNT(*) as count FROM trocas WHERE item_dado_id = @id OR item_recebido_id = @id',
+        { id }
+      );
+      
+      const totalRefs = checkTransacoes.recordset[0].count + checkTrocas.recordset[0].count;
+      
+      if (totalRefs > 0) {
+        return successResponse({
+          error: 'Não é possível excluir',
+          message: `Este item possui ${checkTransacoes.recordset[0].count} transação(ões) e ${checkTrocas.recordset[0].count} troca(s). Remova as referências primeiro.`,
+        }, 409, origin);
+      }
+      
+      // historico_precos and imagens will CASCADE delete automatically
       const query = 'DELETE FROM itens WHERE id = @id';
       await executeQuery(query, { id });
       return successResponse({ message: 'Item excluído com sucesso' }, 200, origin);
