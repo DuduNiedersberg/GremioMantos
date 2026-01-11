@@ -90,15 +90,24 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // PUT /api/lotes/{id} - Update batch
     if (method === 'PUT' && id) {
-      const body: any = await safeParseJson(request);
+      const body = await safeParseJson(request) as Record<string, unknown>;
       
       // Manual validation for partial updates (can't use partial() with refined schemas)
-      const allowedFields = ['nome', 'quantidade_total', 'quantidade_disponivel', 'valor_unitario_compra', 'data_aquisicao', 'observacoes'];
-      const validated: any = {};
+      type PartialLote = Partial<{
+        nome: string;
+        quantidade_total: number;
+        quantidade_disponivel: number;
+        valor_unitario_compra: number;
+        data_aquisicao: string;
+        observacoes: string;
+      }>;
+      
+      const allowedFields: (keyof PartialLote)[] = ['nome', 'quantidade_total', 'quantidade_disponivel', 'valor_unitario_compra', 'data_aquisicao', 'observacoes'];
+      const validated: PartialLote = {};
       
       for (const key of allowedFields) {
         if (key in body) {
-          validated[key] = body[key];
+          validated[key] = body[key] as any;
         }
       }
       
@@ -137,10 +146,22 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
         const result = await executeQuery<Lote>(query, { ...validated, id });
 
+        if (result.recordset.length === 0) {
+          return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+        }
+
         return successResponse(result.recordset[0], 200, origin);
       }
 
-      return successResponse(existingResult.recordset[0], 200, origin);
+      // If no fields to update, fetch and return current record
+      const getQuery = 'SELECT * FROM lotes WHERE id = @id';
+      const getResult = await executeQuery<Lote>(getQuery, { id });
+      
+      if (getResult.recordset.length === 0) {
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+      }
+
+      return successResponse(getResult.recordset[0], 200, origin);
     }
 
     // DELETE /api/lotes/{id} - Delete batch
