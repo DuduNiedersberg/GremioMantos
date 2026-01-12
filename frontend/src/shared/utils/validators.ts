@@ -8,7 +8,7 @@ export const itemSchema = z.object({
   jogador: z.string().optional(),
   numero: z.number().int().min(1).max(99).optional().or(z.string().transform(val => val ? parseInt(val, 10) : undefined)),
   tamanho: z.string().optional(),
-  situacao: z.enum(['disponivel', 'vendido', 'trocado', 'reservado']).default('disponivel'),
+  situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque'),
   valor_compra: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
   valor_venda: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
   valor_mercado: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
