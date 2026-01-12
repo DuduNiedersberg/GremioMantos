@@ -15,28 +15,28 @@ export const clienteSchema = z.object({
 });
 
 export const itemSchema = z.object({
-  tipo: z.enum(['camiseta', 'jaqueta', 'colete', 'treino', 'livro', 'outro']).default('camiseta'),
-  nome: z.string().min(1, 'Nome é obrigatório'),
-  ano: z.number().int().min(1900).max(2100).optional(),
-  modelo: z.string().optional(),
-  marca: z.string().optional(),
-  jogador: z.string().optional(),
-  numero: z.number().int().min(1).max(99).optional(), // API field, will be mapped to numero_camisa
-  tamanho: z.string().optional(),
-  cor_principal: z.string().optional(),
-  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).default('usada'),
-  autografada: z.boolean().optional(),
-  autografo_descricao: z.string().optional(),
-  valor_compra: z.number().min(0).default(0), // NOT NULL in DB
-  valor_venda: z.number().min(0).optional(),
-  lucro_calculado: z.number().optional(),
-  situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque'),
-  destino: z.string().optional(),
-  data_aquisicao: z.string().optional(),
-  data_saida: z.string().optional(),
-  observacoes: z.string().optional(),
-  lote_id: z.number().int().optional(),
-  valor_mercado: z.number().min(0).optional(),
+  tipo: z.enum(['camiseta', 'jaqueta', 'colete', 'treino', 'livro', 'outro']).default('camiseta').nullish(),
+  nome: z.string().nullish(), // Deixando nullish para máxima flexibilidade
+  ano: z.number().int().min(1900).max(2100).nullish(),
+  modelo: z.string().nullish(),
+  marca: z.string().nullish(),
+  jogador: z.string().nullish(),
+  numero: z.number().int().min(1).max(99).nullish(), // Mapeado para numero_camisa
+  tamanho: z.string().nullish(),
+  cor_principal: z.string().nullish(),
+  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).default('usada').nullish(),
+  autografada: z.boolean().nullish(),
+  autografo_descricao: z.string().nullish(),
+  valor_compra: z.number().min(0).default(0).nullish(),
+  valor_venda: z.number().min(0).nullish(),
+  lucro_calculado: z.number().nullish(),
+  situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque').nullish(),
+  destino: z.string().nullish(),
+  data_aquisicao: z.string().nullish(),
+  data_saida: z.string().nullish(),
+  observacoes: z.string().nullish(),
+  lote_id: z.number().int().nullish(),
+  valor_mercado: z.number().min(0).nullish(),
 });
 
 export const vendaSchema = z.object({
