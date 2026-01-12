@@ -1,10 +1,3 @@
-export const SITUACOES = [
-  { value: 'disponivel', label: 'Disponível' },
-  { value: 'vendido', label: 'Vendido' },
-  { value: 'trocado', label: 'Trocado' },
-  { value: 'reservado', label: 'Reservado' },
-] as const;
-
 export const PRIORIDADES = [
   { value: 'baixa', label: 'Baixa', color: 'bg-neutral-500' },
   { value: 'media', label: 'Média', color: 'bg-blue-500' },
