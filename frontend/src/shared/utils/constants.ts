@@ -86,7 +86,7 @@ export const SITUACOES = [
   { value: 'trocada', label: 'Trocada' },
   { value: 'baixada_colecao', label: 'Baixada (Coleção)' },
 ] as const;
-export const TIPOS_CLIENTE[
+export const TIPOS_CLIENTE = [
   {value: 'comprador', label: 'Comprador'},
   {value: 'vendedor', label: 'Vendedor'},
   {value: 'ambos', label: 'Ambos/Parceiro Comercial'},  
