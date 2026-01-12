@@ -24,13 +24,8 @@ export const MARCAS = [
   'Umbro',
   'Topper',
   'Penalty',
-  'Olympikus',
-  'Nike',
   'Adidas',
-  'Reebok',
-  'Kanxa',
-  'Super Bolla',
-  'Outra',
+  'New Balance'
 ] as const;
 
 export const MODELOS = [
@@ -70,27 +65,31 @@ export const TIPOS_HISTORICO = [
 ] as const;
 
 export const TIPOS_ITEM = [
-  { value: 'oficial', label: 'Oficial' },
-  { value: 'torcedor', label: 'Torcedor' },
-  { value: 'jogador', label: 'De Jogo/Jogador' },
+  { value: 'camiseta', label: 'Camiseta' },
+  { value: 'jaqueta', label: 'Jaqueta' },
+  { value: 'colete', label: 'Colete' },
   { value: 'treino', label: 'Treino' },
-  { value: 'retro', label: 'Retrô' },
-  { value: 'especial', label: 'Especial' },
+  { value: 'livro', label: 'Livro' },
+  { value: 'outro', label: 'Outro' },
 ] as const;
 
 export const CONDICOES = [
-  { value: 'nova', label: 'Nova (com etiqueta)' },
+  { value: 'nova', label: 'Nova' },
   { value: 'seminova', label: 'Seminova' },
-  { value: 'usada_boa', label: 'Usada - Bom estado' },
-  { value: 'usada_regular', label: 'Usada - Estado regular' },
-  { value: 'usada_ruim', label: 'Usada - Estado ruim' },
+  { value: 'usada', label: 'Usada' },
+  { value: 'vintage', label: 'Vintage' },
 ] as const;
 
-export const TIPOS_CLIENTE = [
-  { value: 'comprador', label: 'Comprador' },
-  { value: 'vendedor', label: 'Vendedor' },
-  { value: 'trocador', label: 'Trocador' },
-  { value: 'ambos', label: 'Comprador e Vendedor' },
+export const SITUACOES = [
+  { value: 'estoque', label: 'Em Estoque' },
+  { value: 'vendida', label: 'Vendida' },
+  { value: 'trocada', label: 'Trocada' },
+  { value: 'baixada_colecao', label: 'Baixada (Coleção)' },
+] as const;
+export const TIPOS_CLIENTE[
+  {value: 'comprador', label: 'Comprador'},
+  {value: 'vendedor', label: 'Vendedor'},
+  {value: 'ambos', label: 'Ambos/Parceiro Comercial'},  
 ] as const;
 
 export const APP_NAME = 'Bolicho do Grêmio';
