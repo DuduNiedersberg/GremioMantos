@@ -29,7 +29,6 @@ export const itemSchema = z.object({
   autografo_descricao: z.string().nullish(),
   valor_compra: z.number().min(0).default(0).nullish(),
   valor_venda: z.number().min(0).nullish(),
-  lucro_calculado: z.number().nullish(),
   situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque').nullish(),
   destino: z.string().nullish(),
   data_aquisicao: z.string().nullish(),

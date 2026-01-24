@@ -6,6 +6,7 @@ import { Item } from '../../types';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
+import SearchSelect from '../../shared/components/SearchSelect';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
 import { formatCurrency } from '../../shared/utils/formatters';

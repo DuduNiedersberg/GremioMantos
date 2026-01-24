@@ -114,17 +114,12 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       });
 
       // Update item status
-      const itemQuery = 'SELECT valor_compra FROM itens WHERE id = @item_id';
-      const itemResult = await executeQuery<{ valor_compra: number }>(itemQuery, { item_id: body.item_id });
-      const valorCompra = itemResult.recordset[0]?.valor_compra || 0;
-
       const updateItemQuery = `
         UPDATE itens
         SET situacao = 'vendida',
             destino = 'venda',
             data_saida = @data_saida,
-            valor_venda = @valor_venda,
-            lucro_calculado = @lucro_calculado
+            valor_venda = @valor_venda
         WHERE id = @item_id
       `;
 
@@ -132,7 +127,6 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
         item_id: body.item_id,
         data_saida: dataTransacao,
         valor_venda: body.valor || body.valor_venda,
-        lucro_calculado: (body.valor || body.valor_venda) - valorCompra,
       });
 
       return successResponse({
