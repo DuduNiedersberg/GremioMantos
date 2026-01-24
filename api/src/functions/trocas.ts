@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { trocaSchema, safeParseJson, clampPagination } from '../lib/utils';
+import { trocaSchema, trocaUpdateSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Troca } from '../lib/types';
 
 async function trocasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -138,7 +138,37 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
       const datatroca = validated.data_troca || new Date().toISOString().split('T')[0];
 
-      // Update item_dado_id status
+      let itemRecebidoId = validated.item_recebido_id;
+
+      // Se não tem item_recebido_id, criar o item a partir do nome/valor
+      if (!itemRecebidoId && validated.item_recebido_nome) {
+        // Get the type of the item being given away to use as default for received item
+        const itemDadoQuery = 'SELECT tipo FROM itens WHERE id = @id';
+        const itemDadoResult = await executeQuery<{ tipo: string }>(itemDadoQuery, { id: validated.item_dado_id });
+        const tipoItem = itemDadoResult.recordset[0]?.tipo || 'camiseta';
+        
+        const createItemQuery = `
+          INSERT INTO itens (
+            tipo, nome, valor_compra, situacao, data_aquisicao, observacoes
+          )
+          OUTPUT INSERTED.id
+          VALUES (
+            @tipo, @nome, @valor_compra, 'estoque', @data_aquisicao, @observacoes
+          )
+        `;
+        
+        const itemResult = await executeQuery<{ id: number }>(createItemQuery, {
+          tipo: tipoItem,
+          nome: validated.item_recebido_nome,
+          valor_compra: validated.item_recebido_valor || 0,
+          data_aquisicao: datatroca,
+          observacoes: `Item recebido em troca em ${datatroca}`,
+        });
+        
+        itemRecebidoId = itemResult.recordset[0].id;
+      }
+
+      // Update item_dado_id status (marcar como trocada)
       await executeQuery(`
         UPDATE itens 
         SET situacao = 'trocada', 
@@ -150,19 +180,23 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         data_saida: datatroca,
       });
 
-      // Update item_recebido_id status
-      await executeQuery(`
-        UPDATE itens 
-        SET situacao = 'estoque', 
-            destino = NULL, 
-            data_saida = NULL,
-            data_aquisicao = @data_aquisicao
-        WHERE id = @id
-      `, {
-        id: validated.item_recebido_id,
-        data_aquisicao: datatroca,
-      });
+      // O item recebido já foi criado com situacao='estoque', não precisa atualizar
+      // Mas se foi passado um item_recebido_id existente, atualizar sua data
+      if (validated.item_recebido_id) {
+        await executeQuery(`
+          UPDATE itens 
+          SET situacao = 'estoque', 
+              destino = NULL, 
+              data_saida = NULL,
+              data_aquisicao = @data_aquisicao
+          WHERE id = @id
+        `, {
+          id: validated.item_recebido_id,
+          data_aquisicao: datatroca,
+        });
+      }
 
+      // Inserir na tabela trocas
       const query = `
         INSERT INTO trocas (
           item_dado_id, item_recebido_id, valor_adicional, quem_pagou,
@@ -176,17 +210,24 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       `;
 
       const result = await executeQuery<Troca>(query, {
-        ...validated,
+        item_dado_id: validated.item_dado_id,
+        item_recebido_id: itemRecebidoId,
+        valor_adicional: validated.valor_adicional,
+        quem_pagou: validated.quem_pagou,
         data_troca: datatroca,
+        observacoes: validated.observacoes,
       });
 
-      return successResponse(result.recordset[0], 201, origin);
+      return successResponse({
+        ...result.recordset[0],
+        item_recebido_criado: !validated.item_recebido_id, // Flag indicando se criou novo item
+      }, 201, origin);
     }
 
     // PUT /api/trocas/{id} - Update trade or cancel
     if (method === 'PUT' && id) {
       const body = await safeParseJson(request);
-      const validated = trocaSchema.partial().parse(body);
+      const validated = trocaUpdateSchema.parse(body);
 
       // If status is being set to 'cancelada', use cancel logic
       if (validated.status === 'cancelada') {

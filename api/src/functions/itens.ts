@@ -121,7 +121,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         autografo_descricao: (validated as any).autografo_descricao,
         valor_compra: validated.valor_compra,
         valor_venda: validated.valor_venda,
-        lucro_calculado: (validated as any).lucro_calculado,
+        // lucro_calculado is a computed column (valor_venda - valor_compra) and should not be set explicitly
         situacao: validated.situacao,
         destino: (validated as any).destino,
         data_aquisicao: validated.data_aquisicao,
@@ -169,6 +169,9 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         dbParams.numero_camisa = (validated as any).numero;
         delete dbParams.numero;
       }
+      
+      // Remove lucro_calculado as it's a computed column
+      delete dbParams.lucro_calculado;
 
       const setClauses = Object.keys(dbParams)
         .map(key => `${key} = @${key}`)

@@ -6,6 +6,7 @@ import { Item, Cliente } from '../../types';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
+import SearchSelect from '../../shared/components/SearchSelect';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
 import { FORMAS_PAGAMENTO } from '../../shared/utils/constants';
@@ -38,7 +39,7 @@ export default function VendaRegistro() {
     try {
       setLoading(true);
       const [itemsRes, clientesRes] = await Promise.all([
-        getItens({ situacao: 'disponivel', perPage: 100 }),
+        getItens({ situacao: 'estoque', perPage: 100 }),
         getClientes({ perPage: 100 }),
       ]);
       setItems(itemsRes.data.data.data || []);
@@ -117,15 +118,24 @@ export default function VendaRegistro() {
         {/* Item Selection */}
         <div className="card">
           <h2 className="text-lg font-bold mb-4">Selecione o Item</h2>
-          <Select
+          <SearchSelect
             label="Item *"
             name="item_id"
             value={formData.item_id}
-            onChange={handleChange}
+            onChange={(value) => {
+              setFormData(prev => ({ ...prev, item_id: value.toString() }));
+              const item = items.find(i => i.id === parseInt(value.toString()));
+              setSelectedItem(item || null);
+              if (item?.valor_venda) {
+                setFormData(prev => ({ ...prev, valor_venda: item.valor_venda?.toString() || '' }));
+              }
+            }}
             options={items.map(i => ({ 
               value: i.id, 
-              label: `${i.nome}${i.jogador ? ` - ${i.jogador}` : ''}${i.ano ? ` (${i.ano})` : ''}`
+              label: `${i.nome}${i.jogador ? ` - ${i.jogador}` : ''}${i.ano ? ` (${i.ano})` : ''}`,
+              searchTerms: `${i.marca || ''} ${i.jogador || ''} ${i.ano || ''} ${i.tamanho || ''}`
             }))}
+            placeholder="Digite para buscar item..."
           />
           
           {selectedItem && (

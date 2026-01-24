@@ -29,7 +29,6 @@ export const itemSchema = z.object({
   autografo_descricao: z.string().nullish(),
   valor_compra: z.number().min(0).default(0).nullish(),
   valor_venda: z.number().min(0).nullish(),
-  lucro_calculado: z.number().nullish(),
   situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque').nullish(),
   destino: z.string().nullish(),
   data_aquisicao: z.string().nullish(),
@@ -51,13 +50,34 @@ export const vendaSchema = z.object({
 
 export const trocaSchema = z.object({
   item_dado_id: z.number().int().positive(),
-  item_recebido_id: z.number().int().positive(),
+  // Aceitar ID existente OU dados para criar novo item
+  item_recebido_id: z.number().int().positive().optional(),
+  item_recebido_nome: z.string().min(1).optional(),
+  item_recebido_valor: z.number().min(0).optional(),
+  valor_adicional: z.number().optional(),
+  quem_pagou: z.enum(['nos', 'cliente']).optional(),
+  data_troca: z.string().optional(),
+  observacoes: z.string().optional(),
+  status: z.enum(['ativa', 'cancelada']).optional(),
+}).refine(
+  (data) => data.item_recebido_id || data.item_recebido_nome,
+  { message: 'Informe item_recebido_id ou item_recebido_nome', path: ['item_recebido_id'] }
+);
+
+// Schema base para updates (sem a validação de refine)
+const trocaBaseSchema = z.object({
+  item_dado_id: z.number().int().positive(),
+  item_recebido_id: z.number().int().positive().optional(),
+  item_recebido_nome: z.string().min(1).optional(),
+  item_recebido_valor: z.number().min(0).optional(),
   valor_adicional: z.number().optional(),
   quem_pagou: z.enum(['nos', 'cliente']).optional(),
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
   status: z.enum(['ativa', 'cancelada']).optional(),
 });
+
+export const trocaUpdateSchema = trocaBaseSchema.partial();
 
 export const transacaoSchema = z.object({
   tipo_transacao: z.enum(['compra', 'venda', 'troca']),

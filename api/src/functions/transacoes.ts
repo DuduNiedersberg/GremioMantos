@@ -108,18 +108,12 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
 
       // If this is a sale, update the item status
       if (validated.tipo_transacao === 'venda') {
-        // Get current valor_compra for lucro calculation
-        const itemQuery = 'SELECT valor_compra FROM itens WHERE id = @item_id';
-        const itemResult = await executeQuery<{ valor_compra: number }>(itemQuery, { item_id: validated.item_id });
-        const valorCompra = itemResult.recordset[0]?.valor_compra || 0;
-
         const updateItemQuery = `
           UPDATE itens
           SET situacao = 'vendida',
               destino = 'venda',
               data_saida = @data_saida,
-              valor_venda = @valor_venda,
-              lucro_calculado = @lucro_calculado
+              valor_venda = @valor_venda
           WHERE id = @item_id
         `;
 
@@ -127,7 +121,6 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
           item_id: validated.item_id,
           data_saida: dataTransacao,
           valor_venda: validated.valor,
-          lucro_calculado: validated.valor - valorCompra,
         });
       }
 
@@ -185,21 +178,15 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
 
         // If this is a sale and valor changed, update item
         if (existingTransaction.tipo_transacao === 'venda' && validated.valor !== undefined) {
-          const itemQuery = 'SELECT valor_compra FROM itens WHERE id = @item_id';
-          const itemResult = await executeQuery<{ valor_compra: number }>(itemQuery, { item_id: existingTransaction.item_id });
-          const valorCompra = itemResult.recordset[0]?.valor_compra || 0;
-
           const updateItemQuery = `
             UPDATE itens
-            SET valor_venda = @valor_venda,
-                lucro_calculado = @lucro_calculado
+            SET valor_venda = @valor_venda
             WHERE id = @item_id
           `;
 
           await executeQuery(updateItemQuery, {
             item_id: existingTransaction.item_id,
             valor_venda: validated.valor,
-            lucro_calculado: validated.valor - valorCompra,
           });
         }
 

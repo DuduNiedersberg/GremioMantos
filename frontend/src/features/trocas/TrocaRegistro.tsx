@@ -6,6 +6,7 @@ import { Item } from '../../types';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
+import SearchSelect from '../../shared/components/SearchSelect';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
 import { formatCurrency } from '../../shared/utils/formatters';
@@ -36,7 +37,7 @@ export default function TrocaRegistro() {
   const loadItems = async () => {
     try {
       setLoading(true);
-      const response = await getItens({ situacao: 'disponivel', perPage: 100 });
+      const response = await getItens({ situacao: 'estoque', perPage: 100 });
       setMyItems(response.data.data.data || []);
     } catch (err) {
       showError('Erro ao carregar itens');
@@ -110,15 +111,21 @@ export default function TrocaRegistro() {
         {/* Item Selection - My Item */}
         <div className="card">
           <h2 className="text-lg font-bold mb-4">Item que você dará</h2>
-          <Select
+          <SearchSelect
             label="Selecione o item do seu acervo *"
             name="item_dado_id"
             value={formData.item_dado_id}
-            onChange={handleChange}
+            onChange={(value) => {
+              setFormData(prev => ({ ...prev, item_dado_id: value.toString() }));
+              const item = myItems.find(i => i.id === parseInt(value.toString()));
+              setSelectedItemDado(item || null);
+            }}
             options={myItems.map(i => ({ 
               value: i.id, 
-              label: `${i.nome}${i.jogador ? ` - ${i.jogador}` : ''}${i.ano ? ` (${i.ano})` : ''}`
+              label: `${i.nome}${i.jogador ? ` - ${i.jogador}` : ''}${i.ano ? ` (${i.ano})` : ''}`,
+              searchTerms: `${i.marca || ''} ${i.jogador || ''} ${i.ano || ''} ${i.tamanho || ''}`
             }))}
+            placeholder="Digite para buscar item..."
           />
           
           {selectedItemDado && (
@@ -197,8 +204,8 @@ export default function TrocaRegistro() {
               value={formData.quem_pagou}
               onChange={handleChange}
               options={[
-                { value: 'eu', label: 'Eu paguei' },
-                { value: 'outro', label: 'A outra pessoa pagou' },
+                { value: 'nos', label: 'Nós pagamos' },
+                { value: 'cliente', label: 'O cliente/parceiro pagou' },
               ]}
             />
           </div>
