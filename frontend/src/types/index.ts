@@ -60,7 +60,7 @@ export interface Cliente {
 
 export interface Transacao {
   id: number;
-  tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+  tipo_transacao: 'venda' | 'compra' | 'troca';
   item_id: number;
   cliente_id?: number;
   valor: number;
