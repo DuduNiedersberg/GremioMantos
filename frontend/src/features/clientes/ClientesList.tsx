@@ -8,7 +8,7 @@ import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
-import { TIPOS_CLIENTE, ESTADOS_BR } from '../../shared/utils/constants';
+import { TIPOS_CLIENTE } from '../../shared/utils/constants';
 
 export default function ClientesList() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
