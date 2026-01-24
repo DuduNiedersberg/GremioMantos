@@ -82,7 +82,7 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       const body: any = await safeParseJson(request);
       
       // Validate required fields for a sale
-      if (!body.item_id || !body.cliente_id || !body.valor) {
+     if (!body.item_id || !(body.valor || body.valor_venda)) {
         return successResponse({
           error: 'Campos obrigatórios faltando',
           message: 'item_id, cliente_id e valor são obrigatórios para criar uma venda',
