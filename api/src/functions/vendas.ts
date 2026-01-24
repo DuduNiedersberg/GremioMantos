@@ -94,13 +94,11 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       // Create transaction
       const insertQuery = `
         INSERT INTO transacoes (
-          tipo_transacao, item_id, cliente_id, valor, data_transacao,
-          forma_pagamento, observacoes
+          tipo_transacao, item_id, cliente_id, valor, data_transacao, observacoes
         )
         OUTPUT INSERTED.*
         VALUES (
-          'venda', @item_id, @cliente_id, @valor, @data_transacao,
-          @forma_pagamento, @observacoes
+          'venda', @item_id, @cliente_id, @valor, @data_transacao, @observacoes
         )
       `;
 
@@ -109,7 +107,6 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
         cliente_id: body.cliente_id,
         valor: body.valor || body.valor_venda,
         data_transacao: dataTransacao,
-        forma_pagamento: body.forma_pagamento,
         observacoes: body.observacoes,
       });
 
