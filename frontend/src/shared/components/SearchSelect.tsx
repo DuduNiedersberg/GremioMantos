@@ -104,7 +104,8 @@ export default function SearchSelect({
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onChange('');
+    // Clear with appropriate empty value for the type
+    onChange(typeof value === 'number' ? 0 : '');
     setSearch('');
     inputRef.current?.focus();
   };

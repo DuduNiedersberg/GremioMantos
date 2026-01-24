@@ -142,17 +142,23 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
       // Se não tem item_recebido_id, criar o item a partir do nome/valor
       if (!itemRecebidoId && validated.item_recebido_nome) {
+        // Get the type of the item being given away to use as default for received item
+        const itemDadoQuery = 'SELECT tipo FROM itens WHERE id = @id';
+        const itemDadoResult = await executeQuery<{ tipo: string }>(itemDadoQuery, { id: validated.item_dado_id });
+        const tipoItem = itemDadoResult.recordset[0]?.tipo || 'camiseta';
+        
         const createItemQuery = `
           INSERT INTO itens (
             tipo, nome, valor_compra, situacao, data_aquisicao, observacoes
           )
           OUTPUT INSERTED.id
           VALUES (
-            'camiseta', @nome, @valor_compra, 'estoque', @data_aquisicao, @observacoes
+            @tipo, @nome, @valor_compra, 'estoque', @data_aquisicao, @observacoes
           )
         `;
         
         const itemResult = await executeQuery<{ id: number }>(createItemQuery, {
+          tipo: tipoItem,
           nome: validated.item_recebido_nome,
           valor_compra: validated.item_recebido_valor || 0,
           data_aquisicao: datatroca,

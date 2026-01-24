@@ -121,7 +121,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         autografo_descricao: (validated as any).autografo_descricao,
         valor_compra: validated.valor_compra,
         valor_venda: validated.valor_venda,
-        // lucro_calculado removed - it's a computed column
+        // lucro_calculado is a computed column (valor_venda - valor_compra) and should not be set explicitly
         situacao: validated.situacao,
         destino: (validated as any).destino,
         data_aquisicao: validated.data_aquisicao,
