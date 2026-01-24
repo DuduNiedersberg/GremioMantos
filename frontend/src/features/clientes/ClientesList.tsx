@@ -8,7 +8,7 @@ import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
-import { TIPOS_CLIENTE, ESTADOS_BR } from '../../shared/utils/constants';
+import { TIPOS_CLIENTE } from '../../shared/utils/constants';
 
 export default function ClientesList() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -30,7 +30,6 @@ export default function ClientesList() {
     telefone: '',
     instagram: '',
     cidade: '',
-    estado: '',
     tipo: '',
     observacoes: '',
   });
@@ -64,7 +63,6 @@ export default function ClientesList() {
       telefone: '',
       instagram: '',
       cidade: '',
-      estado: '',
       tipo: '',
       observacoes: '',
     });
@@ -84,7 +82,6 @@ export default function ClientesList() {
       telefone: cliente.telefone || '',
       instagram: cliente.instagram || '',
       cidade: cliente.cidade || '',
-      estado: cliente.estado || '',
       tipo: cliente.tipo || '',
       observacoes: cliente.observacoes || '',
     });
@@ -323,22 +320,13 @@ export default function ClientesList() {
                   placeholder="@usuario"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Cidade"
-                  name="cidade"
-                  value={formData.cidade}
-                  onChange={handleChange}
-                  placeholder="Cidade"
-                />
-                <Select
-                  label="Estado"
-                  name="estado"
-                  value={formData.estado}
-                  onChange={handleChange}
-                  options={ESTADOS_BR.map(e => ({ value: e, label: e }))}
-                />
-              </div>
+              <Input
+                label="Cidade"
+                name="cidade"
+                value={formData.cidade}
+                onChange={handleChange}
+                placeholder="Cidade"
+              />
               <Select
                 label="Tipo"
                 name="tipo"

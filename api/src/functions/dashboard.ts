@@ -82,13 +82,13 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
     const salesByMonthQuery = `
       SELECT 
-        FORMAT(data_saida, 'yyyy-MM') as mes,
+        FORMAT(CAST(data_saida AS DATE), 'yyyy-MM') as mes,
         COUNT(*) as quantidade,
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
         SUM(COALESCE(lucro_calculado, 0)) as total_lucro
       FROM dbo.vw_historico_vendas
       WHERE data_saida IS NOT NULL
-      GROUP BY FORMAT(data_saida, 'yyyy-MM')
+      GROUP BY FORMAT(CAST(data_saida AS DATE), 'yyyy-MM')
       ORDER BY mes DESC
     `;
     const salesByMonthResult = await executeQuery(salesByMonthQuery);

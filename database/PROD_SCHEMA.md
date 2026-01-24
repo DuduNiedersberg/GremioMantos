@@ -27,7 +27,7 @@ Stores individual items (primarily jerseys/camisetas) in the collection.
 - `valor_compra` (DECIMAL, NOT NULL): Purchase price
 - `valor_venda` (DECIMAL): Sale price
 - `lucro_calculado` (DECIMAL): Calculated profit (valor_venda - valor_compra)
-- `situacao` (VARCHAR, NOT NULL): Status (disponivel, vendido, trocado, reservado)
+- `situacao` (VARCHAR, NOT NULL): Status (estoque, vendida, trocada, baixada_colecao)
 - `destino` (VARCHAR): Destination (venda, troca, etc.)
 - `data_aquisicao` (DATE): Acquisition date
 - `data_saida` (DATE): Exit/sale date
@@ -217,13 +217,13 @@ Provides sales history from items table.
 - `cliente_nome` (NVARCHAR): Customer name
 
 **Source:**
-Items where `situacao = 'vendido'` and `destino = 'venda'`, joined with transacoes and clientes.
+Items where `situacao = 'vendida'` and `destino = 'venda'`, joined with transacoes and clientes.
 
 #### 3. `dbo.vw_inventario_disponivel`
 Provides available inventory.
 
 **Columns:**
-- All columns from `itens` where `situacao = 'disponivel'`
+- All columns from `itens` where `situacao = 'estoque'`
 
 #### 4. `dbo.vw_relatorio_lucros`
 Provides profit reports.
@@ -236,7 +236,7 @@ Provides profit reports.
 ### 1. Sale Transaction → Item Update
 When creating or updating a `venda` transaction:
 - Update related `itens` row:
-  - `situacao = 'vendido'`
+  - `situacao = 'vendida'`
   - `destino = 'venda'`
   - `data_saida = data_transacao` (or GETDATE() if null)
   - `valor_venda = transacoes.valor`
@@ -246,7 +246,7 @@ When creating or updating a `venda` transaction:
 When deleting a sale transaction:
 - Check if there are other sale transactions for the same item
 - If no other sales exist, revert item to available:
-  - `situacao = 'disponivel'`
+  - `situacao = 'estoque'`
   - `destino = NULL`
   - `data_saida = NULL`
   - `valor_venda = NULL`
@@ -255,11 +255,11 @@ When deleting a sale transaction:
 ### 3. Trade Creation → Item Updates
 When creating or updating a trade:
 - Update `item_dado_id`:
-  - `situacao = 'trocado'`
+  - `situacao = 'trocada'`
   - `destino = 'troca'`
   - `data_saida = data_troca`
 - Update `item_recebido_id`:
-  - `situacao = 'disponivel'`
+  - `situacao = 'estoque'`
   - `destino = NULL`
   - `data_saida = NULL`
   - `data_aquisicao = data_troca`
@@ -270,7 +270,7 @@ When canceling a trade (via `/api/trocas/{id}/cancelar` or PUT with status='canc
   - `status = 'cancelada'`
   - `cancelada_em = GETDATE()`
 - Revert item states to pre-trade condition:
-  - `item_dado_id`: Restore to appropriate state (typically disponivel)
+  - `item_dado_id`: Restore to appropriate state (typically estoque)
   - `item_recebido_id`: May need different handling based on business logic
 
 ### 5. Wishlist Conversion → Item Creation
@@ -278,7 +278,7 @@ When converting wishlist item to actual item:
 - Create new item in `itens` with data from wishlist
 - Set item defaults:
   - `tipo = 'camiseta'`
-  - `situacao = 'disponivel'`
+  - `situacao = 'estoque'`
 - Update wishlist:
   - `status = 'encontrado'`
 
@@ -297,7 +297,7 @@ When converting wishlist item to actual item:
 
 ### 2. Item Defaults
 - `tipo`: Default to `'camiseta'` if not provided
-- `situacao`: Default to `'disponivel'` if not provided
+- `situacao`: Default to `'estoque'` if not provided
 - `valor_compra`: Required field (NOT NULL in database)
 
 ### 3. Transaction Requirements

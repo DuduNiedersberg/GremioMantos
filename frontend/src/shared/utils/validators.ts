@@ -6,7 +6,7 @@ export const itemSchema = z.object({
   marca: z.string().optional(),
   modelo: z.string().optional(),
   jogador: z.string().optional(),
-  numero: z.number().int().min(1).max(99).optional().or(z.string().transform(val => val ? parseInt(val, 10) : undefined)),
+  numero: z.number().int().min(0).max(99).optional().or(z.string().transform(val => val ? parseInt(val, 10) : undefined)),
   tamanho: z.string().optional(),
   situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque'),
   valor_compra: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
@@ -31,18 +31,20 @@ export const vendaSchema = z.object({
 export const trocaSchema = z.object({
   item_dado_id: z.number().int().positive('Selecione o item dado'),
   item_recebido_id: z.number().int().positive('Selecione o item recebido'),
-  valor_item_dado: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
-  valor_item_recebido: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
+  valor_adicional: z.number().optional().or(z.string().transform(val => val ? parseFloat(val) : undefined)),
+  quem_pagou: z.enum(['nos', 'cliente']).optional(),
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
+  status: z.enum(['ativa', 'cancelada']).optional(),
 });
 
 export const loteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  descricao: z.string().optional(),
-  data_compra: z.string().optional(),
-  valor_total: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined).refine(val => val === undefined || !isNaN(val), 'Valor inválido')),
-  fornecedor: z.string().optional(),
+  quantidade_total: z.number().int().min(0).optional().or(z.string().transform(val => val ? parseInt(val, 10) : undefined)),
+  quantidade_disponivel: z.number().int().min(0).optional().or(z.string().transform(val => val ? parseInt(val, 10) : undefined)),
+  valor_unitario_compra: z.number().min(0).optional().or(z.string().transform(val => val ? parseFloat(val) : undefined)),
+  data_aquisicao: z.string().optional(),
+  observacoes: z.string().optional(),
 });
 
 export const wishlistSchema = z.object({
@@ -60,9 +62,10 @@ export const wishlistSchema = z.object({
 
 export const clienteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
+  apelido: z.string().optional(),
   telefone: z.string().optional(),
+  instagram: z.string().optional(),
   cidade: z.string().optional(),
-  estado: z.string().length(2, 'Use a sigla do estado (2 letras)').optional().or(z.literal('')),
+  tipo: z.enum(['cliente', 'fornecedor', 'colecionador', 'ambos']).default('cliente'),
   observacoes: z.string().optional(),
 });

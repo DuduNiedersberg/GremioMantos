@@ -35,7 +35,7 @@ export default function ItemForm() {
     valor_compra: undefined,
     valor_venda: undefined,
     valor_mercado: undefined,
-    situacao: 'disponivel',
+    situacao: 'estoque',
     destino: '',
     data_aquisicao: '',
     observacoes: '',
@@ -301,7 +301,7 @@ export default function ItemForm() {
             <Select
               label="Situação"
               name="situacao"
-              value={formData.situacao || 'disponivel'}
+              value={formData.situacao || 'estoque'}
               onChange={handleChange}
               options={SITUACOES.map(s => ({ value: s.value, label: s.label }))}
             />

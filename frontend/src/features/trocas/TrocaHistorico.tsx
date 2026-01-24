@@ -157,7 +157,7 @@ export default function TrocaHistorico() {
                         {formatCurrency(troca.valor_adicional)}
                         {troca.quem_pagou && (
                           <span className="text-xs text-neutral-500 ml-1">
-                            ({troca.quem_pagou === 'eu' ? 'paguei' : 'recebi'})
+                            ({troca.quem_pagou === 'nos' ? 'paguei' : 'recebi'})
                           </span>
                         )}
                       </span>

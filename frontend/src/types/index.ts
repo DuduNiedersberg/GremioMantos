@@ -16,7 +16,7 @@ export interface Item {
   condicao?: string;
   autografada?: boolean;
   autografo_descricao?: string;
-  situacao: 'disponivel' | 'vendido' | 'trocado' | 'reservado';
+  situacao: 'estoque' | 'vendida' | 'trocada' | 'baixada_colecao';
   destino?: string;
   valor_compra?: number;
   valor_venda?: number;
@@ -34,15 +34,10 @@ export interface Item {
 export interface Lote {
   id: number;
   nome: string;
-  descricao?: string;
-  data_compra?: string;
-  data_aquisicao?: string;
-  valor_total?: number;
-  valor_unitario_compra?: number;
   quantidade_total?: number;
   quantidade_disponivel?: number;
-  fornecedor?: string;
-  quantidade_itens?: number;
+  valor_unitario_compra?: number;
+  data_aquisicao?: string;
   observacoes?: string;
   criado_em: string;
   atualizado_em?: string;
@@ -53,12 +48,10 @@ export interface Cliente {
   id: number;
   nome: string;
   apelido?: string;
-  email?: string;
   telefone?: string;
   instagram?: string;
   cidade?: string;
-  estado?: string;
-  tipo?: string;
+  tipo?: 'cliente' | 'fornecedor' | 'colecionador' | 'ambos';
   observacoes?: string;
   criado_em: string;
   atualizado_em?: string;
@@ -67,7 +60,7 @@ export interface Cliente {
 
 export interface Transacao {
   id: number;
-  tipo_transacao: 'venda' | 'compra' | 'avaliacao';
+  tipo_transacao: 'venda' | 'compra' | 'troca';
   item_id: number;
   cliente_id?: number;
   valor: number;
@@ -98,11 +91,8 @@ export interface Troca {
   id: number;
   item_dado_id: number;
   item_recebido_id: number;
-  valor_item_dado?: number;
-  valor_item_recebido?: number;
   valor_adicional?: number;
-  quem_pagou?: string;
-  diferenca?: number;
+  quem_pagou?: 'nos' | 'cliente';
   data_troca: string;
   observacoes?: string;
   status: 'ativa' | 'cancelada';

@@ -21,7 +21,7 @@ export const itemSchema = z.object({
   modelo: z.string().nullish(),
   marca: z.string().nullish(),
   jogador: z.string().nullish(),
-  numero: z.number().int().min(1).max(99).nullish(), // Mapeado para numero_camisa
+  numero: z.number().int().min(0).max(99).nullish(), // Mapeado para numero_camisa
   tamanho: z.string().nullish(),
   cor_principal: z.string().nullish(),
   condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).default('usada').nullish(),
@@ -105,14 +105,14 @@ export const loteSchema = z.object({
 
 export const wishlistSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  ano: z.number().int().min(1900).max(2100).optional(),
-  marca: z.string().optional(),
-  modelo: z.string().optional(),
-  jogador: z.string().optional(),
-  tamanho: z.string().optional(),
-  valor_estimado: z.number().min(0).optional(),
+  ano: z.number().int().min(1900).max(2100).nullish(),
+  marca: z.string().nullish(),
+  modelo: z.string().nullish(),
+  jogador: z.string().nullish(),
+  tamanho: z.string().nullish(),
+  valor_estimado: z.number().min(0).nullish(),
   prioridade: z.enum(['baixa', 'media', 'alta', 'urgente']).default('media'),
-  observacoes: z.string().optional(),
+  observacoes: z.string().nullish(),
   status: z.enum(['ativo', 'encontrado', 'desistido']).default('ativo'),
 });
 
