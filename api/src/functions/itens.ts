@@ -177,15 +177,25 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         .map(key => `${key} = @${key}`)
         .join(', ');
 
-      const query = `
-        UPDATE itens 
-        SET ${setClauses}
-        OUTPUT INSERTED.*
-        WHERE id = @id
-      `;
+const updateQuery = `
+  UPDATE itens 
+  SET ${setClauses}
+  WHERE id = @id
+`;
+await executeQuery(updateQuery, { ...dbParams, id });
 
-      const result = await executeQuery<any>(query, { ...dbParams, id });
-
+// Buscar o item atualizado
+const selectQuery = `
+  SELECT 
+    id, tipo, nome, ano, modelo, marca, jogador, 
+    numero_camisa, tamanho, cor_principal, condicao, 
+    autografada, autografo_descricao, valor_compra, valor_venda, 
+    lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
+    observacoes, criado_em, atualizado_em, lote_id, valor_mercado
+  FROM itens 
+  WHERE id = @id
+`;
+const result = await executeQuery<any>(selectQuery, { id });
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
