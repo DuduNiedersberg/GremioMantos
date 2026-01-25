@@ -42,9 +42,6 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
           valor_compra, valor_venda, lucro_calculado, 
           data_saida, destino, cliente_id, cliente_nome
         FROM dbo.vw_historico_vendas
-        ${whereClause}
-        ORDER BY data_saida DESC
-        OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
 
       const result = await executeQuery(query, params);
