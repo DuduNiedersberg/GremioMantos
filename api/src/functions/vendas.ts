@@ -36,12 +36,14 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       const countResult = await executeQuery<{ total: number }>(countQuery, params);
       const total = countResult.recordset[0].total;
 
-      const query = `
-        SELECT 
+      const query = `SELECT 
           id, nome, ano, tipo, marca, jogador, 
           valor_compra, valor_venda, lucro_calculado, 
           data_saida, destino, cliente_id, cliente_nome
         FROM dbo.vw_historico_vendas
+        ${whereClause}
+        ORDER BY data_saida DESC
+        OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
 
       const result = await executeQuery(query, params);
