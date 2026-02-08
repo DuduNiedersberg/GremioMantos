@@ -22,9 +22,9 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext, u
     let query = 'SELECT * FROM itens WHERE id = @itemId';
     const params: any = { itemId };
     
-    if (user.role !== 'platform_admin') {
+    if (user.tipo !== 'platform_admin') {
       query += ' AND tenant_id = @tenantId';
-      params.tenantId = user.tenant_id;
+      params.tenantId = user.tenantId;
     }
     
     const result = await executeQuery(query, params);
