@@ -1,5 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
-import { executeQuery } from '../lib/database';
+import { executeQuery, getConnection } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { clampPagination, safeParseJson } from '../lib/utils';
@@ -143,7 +143,6 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
       const valorVenda = body.valor || body.valor_venda;
 
       // Use getConnection for transaction support
-      const { getConnection } = await import('../lib/database');
       const connection = await getConnection();
       const transaction = connection.transaction();
       

@@ -13,25 +13,28 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     // Platform admin can filter by specific tenant_id via query param
     const queryTenantId = request.query.get('tenant_id');
     let tenantId = user.tenantId;
-    let tenantFilter = '';
+    let tenantCondition = '';
     let params: Record<string, any> | undefined = undefined;
     
     if (isPlatformAdmin) {
       if (queryTenantId) {
         // Filter by specific tenant
         tenantId = parseInt(queryTenantId);
-        tenantFilter = 'WHERE tenant_id = @tenant_id';
+        tenantCondition = 'tenant_id = @tenant_id';
         params = { tenant_id: tenantId };
       } else {
         // Show all tenants (global view)
-        tenantFilter = '';
+        tenantCondition = '';
         params = undefined;
       }
     } else {
       // Non-admin: always filter by their tenant
-      tenantFilter = 'WHERE tenant_id = @tenant_id';
+      tenantCondition = 'tenant_id = @tenant_id';
       params = { tenant_id: user.tenantId };
     }
+    
+    // Build WHERE clause for metrics query
+    const metricsWhere = tenantCondition ? `WHERE ${tenantCondition}` : '';
     
     // Calculate metrics from direct queries on itens table
     const metricsQuery = `
@@ -44,7 +47,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_compra, 0) ELSE 0 END) as total_investido_vendas,
         SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_venda, 0) ELSE 0 END) as total_vendas
       FROM dbo.itens
-      ${tenantFilter}
+      ${metricsWhere}
     `;
     const metricsResult = await executeQuery(metricsQuery, params);
     
@@ -96,7 +99,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     const recentQuery = `
       SELECT TOP 5 id, nome, ano, marca, valor_compra, data_aquisicao
       FROM dbo.itens
-      WHERE situacao = 'estoque' ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
+      WHERE situacao = 'estoque' ${tenantCondition ? `AND ${tenantCondition}` : ''}
       ORDER BY data_aquisicao DESC
     `;
     const recentResult = await executeQuery(recentQuery, params);
@@ -105,7 +108,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     const topValueQuery = `
       SELECT TOP 5 id, nome, ano, jogador, valor_compra
       FROM dbo.itens
-      WHERE situacao = 'estoque' ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
+      WHERE situacao = 'estoque' ${tenantCondition ? `AND ${tenantCondition}` : ''}
       ORDER BY valor_compra DESC
     `;
     const topValueResult = await executeQuery(topValueQuery, params);
@@ -118,7 +121,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
         SUM(COALESCE(valor_venda, 0) - COALESCE(valor_compra, 0)) as total_lucro
       FROM dbo.itens
-      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
+      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${tenantCondition ? `AND ${tenantCondition}` : ''}
       GROUP BY FORMAT(CAST(data_saida AS DATE), 'yyyy-MM')
       ORDER BY mes DESC
     `;

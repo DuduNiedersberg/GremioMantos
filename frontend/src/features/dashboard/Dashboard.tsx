@@ -63,7 +63,7 @@ export default function Dashboard() {
       loadAdminMetrics();
       loadTenants();
     }
-  }, [selectedTenantId]);
+  }, [selectedTenantId, isPlatformAdmin]);
 
   const loadDashboard = async () => {
     try {

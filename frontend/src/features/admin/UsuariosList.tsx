@@ -342,6 +342,7 @@ interface UsuarioFormModalProps {
 }
 
 function UsuarioFormModal({ title, usuario, onClose, onSubmit, tenants, isPlatformAdmin }: UsuarioFormModalProps) {
+  const { error } = useToast();
   const [formData, setFormData] = useState({
     nome: usuario?.nome || '',
     email: usuario?.email || '',
@@ -355,7 +356,7 @@ function UsuarioFormModal({ title, usuario, onClose, onSubmit, tenants, isPlatfo
     e.preventDefault();
     const data: any = { ...formData };
     if (!usuario && !data.senha) {
-      alert('Senha é obrigatória para criar usuário');
+      error('Senha é obrigatória para criar usuário');
       return;
     }
     if (usuario) {
@@ -445,12 +446,13 @@ function UsuarioFormModal({ title, usuario, onClose, onSubmit, tenants, isPlatfo
 }
 
 function ResetPasswordModal({ usuario, onClose, onSubmit }: any) {
+  const { error } = useToast();
   const [novaSenha, setNovaSenha] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaSenha) {
-      alert('Senha é obrigatória');
+      error('Senha é obrigatória');
       return;
     }
     onSubmit(novaSenha);
