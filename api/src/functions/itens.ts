@@ -3,14 +3,10 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { itemSchema, safeParseJson, clampPagination } from '../lib/utils';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function itensHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function itensHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
-
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
 
   try {
     const method = request.method;
@@ -26,6 +22,11 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
       
       let whereClause = 'WHERE 1=1';
       const params: Record<string, any> = {};
+
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
 
       if (situacao) {
         whereClause += ' AND situacao = @situacao';
@@ -75,6 +76,14 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
 
     // GET /api/itens/{id} - Get single item
     if (method === 'GET' && id) {
+      let whereClause = 'WHERE id = @id';
+      const params: Record<string, any> = { id };
+
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       const query = `
         SELECT 
           id, tipo, nome, ano, modelo, marca, jogador, 
@@ -83,9 +92,9 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
           lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
           observacoes, criado_em, atualizado_em, lote_id, valor_mercado
         FROM itens 
-        WHERE id = @id
+        ${whereClause}
       `;
-      const result = await executeQuery<any>(query, { id });
+      const result = await executeQuery<any>(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
@@ -129,6 +138,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         observacoes: validated.observacoes,
         lote_id: validated.lote_id,
         valor_mercado: validated.valor_mercado,
+        tenant_id: user.tipo === 'platform_admin' && (validated as any).tenant_id ? (validated as any).tenant_id : user.tenantId,
       };
 
       const query = `
@@ -136,14 +146,14 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
           tipo, nome, ano, modelo, marca, jogador, numero_camisa, tamanho,
           cor_principal, condicao, autografada, autografo_descricao,
           valor_compra, valor_venda, situacao, destino,
-          data_aquisicao, data_saida, observacoes, lote_id, valor_mercado
+          data_aquisicao, data_saida, observacoes, lote_id, valor_mercado, tenant_id
         ) 
         OUTPUT INSERTED.*
         VALUES (
           @tipo, @nome, @ano, @modelo, @marca, @jogador, @numero_camisa, @tamanho,
           @cor_principal, @condicao, @autografada, @autografo_descricao,
           @valor_compra, @valor_venda, @situacao, @destino,
-          @data_aquisicao, @data_saida, @observacoes, @lote_id, @valor_mercado
+          @data_aquisicao, @data_saida, @observacoes, @lote_id, @valor_mercado, @tenant_id
         )
       `;
 
@@ -177,25 +187,41 @@ async function itensHandler(request: HttpRequest, context: InvocationContext): P
         .map(key => `${key} = @${key}`)
         .join(', ');
 
-const updateQuery = `
-  UPDATE itens 
-  SET ${setClauses}
-  WHERE id = @id
-`;
-await executeQuery(updateQuery, { ...dbParams, id });
+      let updateWhereClause = 'WHERE id = @id';
+      const updateParams: Record<string, any> = { ...dbParams, id };
 
-// Buscar o item atualizado
-const selectQuery = `
-  SELECT 
-    id, tipo, nome, ano, modelo, marca, jogador, 
-    numero_camisa, tamanho, cor_principal, condicao, 
-    autografada, autografo_descricao, valor_compra, valor_venda, 
-    lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
-    observacoes, criado_em, atualizado_em, lote_id, valor_mercado
-  FROM itens 
-  WHERE id = @id
-`;
-const result = await executeQuery<any>(selectQuery, { id });
+      if (user.tipo !== 'platform_admin') {
+        updateWhereClause += ' AND tenant_id = @tenant_id';
+        updateParams.tenant_id = user.tenantId;
+      }
+
+      const updateQuery = `
+        UPDATE itens 
+        SET ${setClauses}
+        ${updateWhereClause}
+      `;
+      await executeQuery(updateQuery, updateParams);
+
+      // Buscar o item atualizado
+      let selectWhereClause = 'WHERE id = @id';
+      const selectParams: Record<string, any> = { id };
+
+      if (user.tipo !== 'platform_admin') {
+        selectWhereClause += ' AND tenant_id = @tenant_id';
+        selectParams.tenant_id = user.tenantId;
+      }
+
+      const selectQuery = `
+        SELECT 
+          id, tipo, nome, ano, modelo, marca, jogador, 
+          numero_camisa, tamanho, cor_principal, condicao, 
+          autografada, autografo_descricao, valor_compra, valor_venda, 
+          lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
+          observacoes, criado_em, atualizado_em, lote_id, valor_mercado
+        FROM itens 
+        ${selectWhereClause}
+      `;
+      const result = await executeQuery<any>(selectQuery, selectParams);
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
@@ -233,8 +259,16 @@ const result = await executeQuery<any>(selectQuery, { id });
       }
       
       // historico_precos and imagens will CASCADE delete automatically
-      const query = 'DELETE FROM itens WHERE id = @id';
-      await executeQuery(query, { id });
+      let deleteWhereClause = 'WHERE id = @id';
+      const deleteParams: Record<string, any> = { id };
+
+      if (user.tipo !== 'platform_admin') {
+        deleteWhereClause += ' AND tenant_id = @tenant_id';
+        deleteParams.tenant_id = user.tenantId;
+      }
+
+      const query = `DELETE FROM itens ${deleteWhereClause}`;
+      await executeQuery(query, deleteParams);
       return successResponse({ message: 'Item excluído com sucesso' }, 200, origin);
     }
 
@@ -244,9 +278,19 @@ const result = await executeQuery<any>(selectQuery, { id });
   }
 }
 
+async function itensHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
+  return protectedRoute(itensHandler)(request, context);
+}
+
 app.http('itens', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'itens/{id?}',
-  handler: itensHandler,
+  handler: itensHandlerWrapper,
 });
