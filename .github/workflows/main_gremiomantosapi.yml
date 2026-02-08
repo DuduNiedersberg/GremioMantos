@@ -45,11 +45,13 @@ jobs:
           rm -rf "${{ env.OUTPUT_DIR }}"
           mkdir -p "${{ env.OUTPUT_DIR }}"
 
+          # Copy compiled code (flatten dist structure for Azure Functions)
+          cp -R "${{ env.API_DIR }}/dist/"* "${{ env.OUTPUT_DIR }}/"
+          
           # Copy runtime files expected by Azure Functions
           cp "${{ env.API_DIR }}/host.json" "${{ env.OUTPUT_DIR }}/"
           cp "${{ env.API_DIR }}/package.json" "${{ env.OUTPUT_DIR }}/"
           cp "${{ env.API_DIR }}/package-lock.json" "${{ env.OUTPUT_DIR }}/"
-          cp -R "${{ env.API_DIR }}/dist" "${{ env.OUTPUT_DIR }}/dist"
 
           # Install production dependencies only
           pushd "${{ env.OUTPUT_DIR }}"
@@ -62,6 +64,10 @@ jobs:
           popd
 
           ls -lh "${{ env.ZIP_NAME }}"
+          
+          # Debug: Show structure
+          echo "=== Deployment package structure ==="
+          unzip -l "${{ env.ZIP_NAME }}" | head -n 50
 
       - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
@@ -98,4 +104,9 @@ jobs:
         run: |
           BASE_URL="https://${{ env.FUNCTION_APP_NAME }}.azurewebsites.net"
           curl -s -i "$BASE_URL/api/health" | head -n 30
-
+          
+      - name: Test auth endpoints
+        run: |
+          BASE_URL="https://${{ env.FUNCTION_APP_NAME }}.azurewebsites.net"
+          echo "Testing /api/auth/register endpoint..."
+          curl -s -i "$BASE_URL/api/auth/register" | head -n 20
