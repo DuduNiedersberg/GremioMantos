@@ -70,8 +70,8 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext, us
       const body = await safeParseJson(request);
       const validated = loteSchema.parse(body);
 
-      const tenantId = user.tipo === 'platform_admin' && (validated as any).tenant_id 
-        ? (validated as any).tenant_id 
+      const tenantId = user.tipo === 'platform_admin' && validated.tenant_id 
+        ? validated.tenant_id 
         : user.tenantId;
 
       const query = `
@@ -180,7 +180,14 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext, us
       const tenantFilter = isPlatformAdmin ? '' : ' AND tenant_id = @tenant_id';
       const params = isPlatformAdmin ? { id } : { id, tenant_id: user.tenantId };
       
-      // First, unlink items from this batch
+      // First, verify the lote exists and user has access, then unlink items
+      const verifyQuery = `SELECT id FROM lotes WHERE id = @id${tenantFilter}`;
+      const verifyResult = await executeQuery(verifyQuery, params);
+      
+      if (verifyResult.recordset.length === 0) {
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+      }
+      
       await executeQuery('UPDATE itens SET lote_id = NULL WHERE lote_id = @id', { id });
       
       const query = `DELETE FROM lotes WHERE id = @id${tenantFilter}`;
