@@ -20,7 +20,9 @@ const config: sql.config = {
   }
 }
 
-// POST /api/auth/register
+// ============================================================================
+// POST /api/auth/register — Registrar novo usuário
+// ============================================================================
 async function register(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   try {
     const body = await request.json() as any
@@ -97,11 +99,13 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
     }
   } catch (error: any) {
     context.error('Erro no registro:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao registrar usuário' } }
+    return { status: 500, jsonBody: { error: 'Erro ao registrar usuário', details: error.message } }
   }
 }
 
-// POST /api/auth/login
+// ============================================================================
+// POST /api/auth/login — Login (retorna JWT)
+// ============================================================================
 async function login(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   try {
     const body = await request.json() as any
@@ -130,7 +134,7 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
     }
 
     if (usuario.provider !== 'local') {
-      return { status: 400, jsonBody: { error: `Este email está vinculado a ${usuario.provider}` } }
+      return { status: 400, jsonBody: { error: `Este email está vinculado a ${usuario.provider}. Use login social.` } }
     }
 
     const senhaValida = await verifyPassword(senha, usuario.senha_hash)
@@ -138,13 +142,7 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
       return { status: 401, jsonBody: { error: 'Email ou senha incorretos' } }
     }
 
-    // Atualizar último login
-    try {
-      await pool.request().input('id', sql.Int, usuario.id).query('UPDATE usuarios SET ultimo_login = GETDATE() WHERE id = @id')
-    } catch (updateError: any) {
-      // Log the error but don't fail the login
-      context.warn('Erro ao atualizar ultimo_login:', updateError)
-    }
+    await pool.request().input('id', sql.Int, usuario.id).query('UPDATE usuarios SET ultimo_login = GETDATE() WHERE id = @id')
 
     const token = generateToken({
       userId: usuario.id,
@@ -170,11 +168,13 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
     }
   } catch (error: any) {
     context.error('Erro no login:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao fazer login' } }
+    return { status: 500, jsonBody: { error: 'Erro ao fazer login', details: error.message } }
   }
 }
 
-// GET /api/auth/me
+// ============================================================================
+// GET /api/auth/me — Buscar usuário logado
+// ============================================================================
 async function me(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   try {
     const authHeader = request.headers.get('authorization')
@@ -209,10 +209,13 @@ async function me(request: HttpRequest, context: InvocationContext): Promise<Htt
     return { status: 200, jsonBody: result.recordset[0] }
   } catch (error: any) {
     context.error('Erro ao buscar usuário:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao buscar usuário' } }
+    return { status: 500, jsonBody: { error: 'Erro ao buscar usuário', details: error.message } }
   }
 }
 
+// ============================================================================
+// REGISTRAR ROTAS NO AZURE FUNCTIONS
+// ============================================================================
 app.http('authRegister', {
   methods: ['POST'],
   route: 'auth/register',
