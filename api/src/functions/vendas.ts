@@ -20,12 +20,17 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
       const search = request.query.get('search');
       const offset = (page - 1) * perPage;
 
-      let whereClause = 'WHERE i.situacao = @situacao AND i.destino = @destino AND i.tenant_id = @tenant_id';
+      let whereClause = 'WHERE i.situacao = @situacao AND i.destino = @destino';
       const params: Record<string, any> = {
         situacao: 'vendida',
         destino: 'venda',
-        tenant_id: user.tenantId,
       };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND i.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
 
       if (search) {
         whereClause += ' AND (i.nome LIKE @search OR i.jogador LIKE @search OR i.marca LIKE @search OR c.nome LIKE @search)';
@@ -69,6 +74,19 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
 
     // GET /api/vendas/{id} - Get single sale from itens table
     if (method === 'GET' && id) {
+      let whereClause = 'WHERE i.situacao = @situacao AND i.destino = @destino AND i.id = @id';
+      const params: Record<string, any> = {
+        situacao: 'vendida',
+        destino: 'venda',
+        id: id,
+      };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND i.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       const query = `
         SELECT 
           i.id, i.nome, i.ano, i.tipo, i.marca, i.jogador, 
@@ -77,14 +95,9 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
           i.data_saida, i.destino, i.cliente_id, c.nome as cliente_nome
         FROM dbo.itens i
         LEFT JOIN dbo.clientes c ON i.cliente_id = c.id
-        WHERE i.situacao = @situacao AND i.destino = @destino AND i.id = @id AND i.tenant_id = @tenant_id
+        ${whereClause}
       `;
-      const result = await executeQuery(query, { 
-        id, 
-        situacao: 'vendida', 
-        destino: 'venda',
-        tenant_id: user.tenantId 
-      });
+      const result = await executeQuery(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Venda não encontrada' }, 404, origin);

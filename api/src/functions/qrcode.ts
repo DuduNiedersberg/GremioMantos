@@ -23,8 +23,8 @@ async function qrcodeHandler(request: HttpRequest, context: InvocationContext, u
     const params: any = { itemId };
     
     if (user.tipo !== 'platform_admin') {
-      query += ' AND tenant_id = @tenantId';
-      params.tenantId = user.tenantId;
+      query += ' AND tenant_id = @tenant_id';
+      params.tenant_id = user.tenantId;
     }
     
     const result = await executeQuery(query, params);

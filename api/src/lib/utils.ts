@@ -69,7 +69,7 @@ export const clienteSchema = z.object({
   cidade: z.string().optional(),
   tipo: z.enum(['vendedor', 'comprador', 'ambos']).default('comprador'),
   observacoes: z.string().optional(),
-  tipo_cliente: z.enum(['usuario', 'externo', 'parceiro']).optional(),
+  tipo_cliente: z.enum(['usuario', 'externo', 'parceiro']).optional(), // Tipo do cliente na plataforma: usuario (conta registrada), externo (cliente sem conta), parceiro (fornecedor/parceria)
   tenant_id: z.number().int().positive().optional(),
 });
 
