@@ -116,7 +116,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
 
     // POST /api/admin/usuarios - Create user
     if (method === 'POST') {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       if (!body.nome || !body.email || !body.senha) {
         return successResponse({
@@ -176,7 +176,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
 
     // PUT /api/admin/usuarios/:id - Update user
     if (method === 'PUT' && id) {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       let whereClause = 'WHERE id = @id';
       const updateParams: Record<string, any> = { id };
@@ -260,7 +260,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
 
     // PATCH /api/admin/usuarios/:id/reset-password - Reset password
     if (method === 'PATCH' && id && action === 'reset-password') {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       if (!body.nova_senha) {
         return successResponse({

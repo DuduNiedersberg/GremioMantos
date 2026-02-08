@@ -37,7 +37,10 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
         params.search = `%${search}%`;
       }
 
-      const countQuery = `SELECT COUNT(*) as total FROM dbo.itens i ${whereClause}`;
+      const countQuery = `SELECT COUNT(*) as total FROM dbo.itens i
+LEFT JOIN dbo.transacoes t ON t.item_id = i.id AND t.tipo_transacao = 'venda'
+LEFT JOIN dbo.clientes c ON t.cliente_id = c.id
+${whereClause}`;
       const countResult = await executeQuery<{ total: number }>(countQuery, params);
       const total = countResult.recordset[0].total;
 

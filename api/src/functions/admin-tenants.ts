@@ -126,7 +126,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
 
     // POST /api/admin/tenants - Create new tenant
     if (method === 'POST') {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       if (!body.nome || !body.slug) {
         return successResponse({
@@ -176,7 +176,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
 
     // PUT /api/admin/tenants/:id - Update tenant
     if (method === 'PUT' && id) {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       // Build SET clause dynamically
       const allowedFields = [
@@ -240,7 +240,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
 
     // PATCH /api/admin/tenants/:id/suspend - Suspend/unsuspend tenant
     if (method === 'PATCH' && id && action === 'suspend') {
-      const body = await safeParseJson(request);
+      const body = await safeParseJson<any>(request);
 
       if (body.suspenso === undefined) {
         return successResponse({
