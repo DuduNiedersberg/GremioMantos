@@ -70,7 +70,7 @@ export const deleteItem = (id: number) => api.delete(`/itens/${id}`);
 export const getItemQRCode = (id: number) => api.get(`/itens/${id}/qrcode`);
 
 // Dashboard
-export const getDashboard = () => api.get('/dashboard');
+export const getDashboard = (params?: Record<string, any>) => api.get('/dashboard', { params });
 
 // Transacoes (full CRUD)
 export const getTransacoes = (params?: any) => api.get('/transacoes', { params });
