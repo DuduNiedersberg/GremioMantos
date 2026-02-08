@@ -6,6 +6,7 @@
  */
 
 // Import all function modules to register endpoints
+import './functions/auth'
 import './functions/health';
 import './functions/itens';
 import './functions/vendas';
