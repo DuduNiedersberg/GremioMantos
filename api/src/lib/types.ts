@@ -108,6 +108,7 @@ export interface WishlistItem {
   status: 'ativo' | 'encontrado' | 'desistido';
   criado_em: string;
   atualizado_em: string;
+  tenant_id: number;
 }
 
 export interface HistoricoPreco {
