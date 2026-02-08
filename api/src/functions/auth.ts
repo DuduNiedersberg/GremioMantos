@@ -48,7 +48,10 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
 
     // Hash da senha
     let senhaHash: string | null = null
-    if (data.provider === 'local' && data.senha) {
+    if (data.provider === 'local') {
+      if (!data.senha) {
+        return { status: 400, jsonBody: { error: 'Senha é obrigatória para autenticação local' } }
+      }
       senhaHash = await hashPassword(data.senha)
     }
 
@@ -94,7 +97,7 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
     }
   } catch (error: any) {
     context.error('Erro no registro:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao registrar usuário', details: error.message } }
+    return { status: 500, jsonBody: { error: 'Erro ao registrar usuário' } }
   }
 }
 
@@ -135,7 +138,13 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
       return { status: 401, jsonBody: { error: 'Email ou senha incorretos' } }
     }
 
-    await pool.request().input('id', sql.Int, usuario.id).query('UPDATE usuarios SET ultimo_login = GETDATE() WHERE id = @id')
+    // Atualizar último login
+    try {
+      await pool.request().input('id', sql.Int, usuario.id).query('UPDATE usuarios SET ultimo_login = GETDATE() WHERE id = @id')
+    } catch (updateError: any) {
+      // Log the error but don't fail the login
+      context.warn('Erro ao atualizar ultimo_login:', updateError)
+    }
 
     const token = generateToken({
       userId: usuario.id,
@@ -161,7 +170,7 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
     }
   } catch (error: any) {
     context.error('Erro no login:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao fazer login', details: error.message } }
+    return { status: 500, jsonBody: { error: 'Erro ao fazer login' } }
   }
 }
 
@@ -200,7 +209,7 @@ async function me(request: HttpRequest, context: InvocationContext): Promise<Htt
     return { status: 200, jsonBody: result.recordset[0] }
   } catch (error: any) {
     context.error('Erro ao buscar usuário:', error)
-    return { status: 500, jsonBody: { error: 'Erro ao buscar usuário', details: error.message } }
+    return { status: 500, jsonBody: { error: 'Erro ao buscar usuário' } }
   }
 }
 

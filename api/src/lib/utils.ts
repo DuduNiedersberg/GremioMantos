@@ -6,7 +6,11 @@ import jwt from "jsonwebtoken"
 // AUTHENTICATION & SECURITY
 // ============================================================================
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key-change-in-production"
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable must be set')
+}
+
+const JWT_SECRET = process.env.JWT_SECRET
 const JWT_EXPIRES_IN = "7d"
 const BCRYPT_ROUNDS = 12
 
@@ -274,6 +278,7 @@ export const senhaSchema = z.string()
   .regex(/[A-Z]/, 'Deve ter ao menos 1 letra maiúscula')
   .regex(/[a-z]/, 'Deve ter ao menos 1 letra minúscula')
   .regex(/[0-9]/, 'Deve ter ao menos 1 número')
+  .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Deve ter ao menos 1 caractere especial')
 
 // --- USUARIOS ---
 export const usuarioCreateSchema = z.object({
@@ -285,7 +290,10 @@ export const usuarioCreateSchema = z.object({
   provider_id: z.string().optional(),
   tipo: UsuarioTipoEnum.default('colecionador'),
   tenant_id: z.number().int().positive().nullable().optional()
-})
+}).refine(
+  (data) => data.provider !== 'local' || data.senha,
+  { message: 'Senha é obrigatória para autenticação local', path: ['senha'] }
+)
 
 export const usuarioLoginSchema = z.object({
   email: emailSchema,
