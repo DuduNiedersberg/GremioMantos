@@ -52,10 +52,16 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
     (i.valor_venda - i.valor_compra) as lucro,
     i.data_saida as data_venda,
     i.destino,
-    i.cliente_id,
-    c.nome as cliente_nome
+    t.id as transacao_id,
+    t.cliente_id,
+    c.nome as cliente_nome,
+    vd.forma_pagamento,
+    vd.codigo_rastreio,
+    vd.transportadora
   FROM dbo.itens i
-  LEFT JOIN dbo.clientes c ON i.cliente_id = c.id
+  LEFT JOIN dbo.transacoes t ON t.item_id = i.id AND t.tipo_transacao = 'venda'
+  LEFT JOIN dbo.clientes c ON t.cliente_id = c.id
+  LEFT JOIN dbo.venda_detalhes vd ON vd.transacao_id = t.id
   ${whereClause}
   ORDER BY i.data_saida DESC
   OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
@@ -92,9 +98,23 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
           i.id, i.nome, i.ano, i.tipo, i.marca, i.jogador, 
           i.valor_compra, i.valor_venda, 
           (i.valor_venda - i.valor_compra) as lucro_calculado, 
-          i.data_saida, i.destino, i.cliente_id, c.nome as cliente_nome
+          i.data_saida, i.destino,
+          t.id as transacao_id,
+          t.cliente_id,
+          c.nome as cliente_nome,
+          vd.forma_pagamento,
+          vd.endereco_entrega,
+          vd.valor_frete,
+          vd.codigo_rastreio,
+          vd.transportadora,
+          vd.data_envio,
+          vd.data_entrega_prevista,
+          vd.data_entrega_real,
+          vd.observacoes as venda_observacoes
         FROM dbo.itens i
-        LEFT JOIN dbo.clientes c ON i.cliente_id = c.id
+        LEFT JOIN dbo.transacoes t ON t.item_id = i.id AND t.tipo_transacao = 'venda'
+        LEFT JOIN dbo.clientes c ON t.cliente_id = c.id
+        LEFT JOIN dbo.venda_detalhes vd ON vd.transacao_id = t.id
         ${whereClause}
       `;
       const result = await executeQuery(query, params);
@@ -106,62 +126,118 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext, u
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // POST /api/vendas - Backward compatible: create sale via transacoes
+    // POST /api/vendas - Create atomic sale with transacao + venda_detalhes + item update
     if (method === 'POST') {
       const body: any = await safeParseJson(request);
       
       // Validate required fields for a sale
-     if (!body.item_id || !(body.valor || body.valor_venda)) {
+      if (!body.item_id || !(body.valor || body.valor_venda)) {
         return successResponse({
           error: 'Campos obrigatórios faltando',
-          message: 'item_id, cliente_id e valor são obrigatórios para criar uma venda',
+          message: 'item_id e valor são obrigatórios para criar uma venda',
         }, 400, origin);
       }
 
       const tenantId = user.tipo === 'platform_admin' && body.tenant_id ? body.tenant_id : user.tenantId;
       const dataTransacao = body.data_venda || new Date().toISOString().split('T')[0];
+      const valorVenda = body.valor || body.valor_venda;
 
-      // Create transaction
-      const insertQuery = `
-        INSERT INTO transacoes (
-          tipo_transacao, item_id, cliente_id, valor, data_transacao, observacoes, tenant_id
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          'venda', @item_id, @cliente_id, @valor, @data_transacao, @observacoes, @tenant_id
-        )
-      `;
+      // Use getConnection for transaction support
+      const { getConnection } = await import('../lib/database');
+      const connection = await getConnection();
+      const transaction = connection.transaction();
+      
+      try {
+        await transaction.begin();
 
-      const result = await executeQuery(insertQuery, {
-        item_id: body.item_id,
-        cliente_id: body.cliente_id,
-        valor: body.valor || body.valor_venda,
-        data_transacao: dataTransacao,
-        observacoes: body.observacoes,
-        tenant_id: tenantId,
-      });
+        // Step 1: Create transacao
+        const insertTransacaoQuery = `
+          INSERT INTO transacoes (
+            tipo_transacao, item_id, cliente_id, valor, data_transacao, observacoes, tenant_id, status
+          )
+          OUTPUT INSERTED.id
+          VALUES (
+            'venda', @item_id, @cliente_id, @valor, @data_transacao, @observacoes, @tenant_id, 'concluida'
+          )
+        `;
 
-      // Update item status
-      const updateItemQuery = `
-        UPDATE itens
-        SET situacao = 'vendida',
-            destino = 'venda',
-            data_saida = @data_saida,
-            valor_venda = @valor_venda
-        WHERE id = @item_id AND tenant_id = @tenant_id
-      `;
+        const transacaoRequest = transaction.request();
+        transacaoRequest.input('item_id', body.item_id);
+        transacaoRequest.input('cliente_id', body.cliente_id || null);
+        transacaoRequest.input('valor', valorVenda);
+        transacaoRequest.input('data_transacao', dataTransacao);
+        transacaoRequest.input('observacoes', body.observacoes || null);
+        transacaoRequest.input('tenant_id', tenantId);
 
-      await executeQuery(updateItemQuery, {
-        item_id: body.item_id,
-        data_saida: dataTransacao,
-        valor_venda: body.valor || body.valor_venda,
-        tenant_id: tenantId,
-      });
+        const transacaoResult = await transacaoRequest.query(insertTransacaoQuery);
+        const transacaoId = transacaoResult.recordset[0].id;
 
-      return successResponse({
-        ...result.recordset[0],
-        message: 'Venda criada com sucesso via transações',
-      }, 201, origin);
+        // Step 2: Create venda_detalhes
+        if (body.forma_pagamento || body.valor_frete || body.endereco_entrega || body.codigo_rastreio || body.transportadora || body.endereco_id) {
+          const insertVendaDetalhesQuery = `
+            INSERT INTO venda_detalhes (
+              transacao_id, forma_pagamento, endereco_entrega, valor_frete, 
+              codigo_rastreio, transportadora, data_envio, data_entrega_prevista, 
+              data_entrega_real, observacoes, endereco_id
+            )
+            VALUES (
+              @transacao_id, @forma_pagamento, @endereco_entrega, @valor_frete,
+              @codigo_rastreio, @transportadora, @data_envio, @data_entrega_prevista,
+              @data_entrega_real, @observacoes_venda, @endereco_id
+            )
+          `;
+
+          const vendaDetalhesRequest = transaction.request();
+          vendaDetalhesRequest.input('transacao_id', transacaoId);
+          vendaDetalhesRequest.input('forma_pagamento', body.forma_pagamento || null);
+          vendaDetalhesRequest.input('endereco_entrega', body.endereco_entrega || null);
+          vendaDetalhesRequest.input('valor_frete', body.valor_frete || 0);
+          vendaDetalhesRequest.input('codigo_rastreio', body.codigo_rastreio || null);
+          vendaDetalhesRequest.input('transportadora', body.transportadora || null);
+          vendaDetalhesRequest.input('data_envio', body.data_envio || null);
+          vendaDetalhesRequest.input('data_entrega_prevista', body.data_entrega_prevista || null);
+          vendaDetalhesRequest.input('data_entrega_real', body.data_entrega_real || null);
+          vendaDetalhesRequest.input('observacoes_venda', body.observacoes_venda || null);
+          vendaDetalhesRequest.input('endereco_id', body.endereco_id || null);
+
+          await vendaDetalhesRequest.query(insertVendaDetalhesQuery);
+        }
+
+        // Step 3: Update item status
+        const updateItemQuery = `
+          UPDATE itens
+          SET situacao = 'vendida',
+              destino = 'venda',
+              data_saida = @data_saida,
+              valor_venda = @valor_venda,
+              lucro_calculado = @valor_venda - COALESCE(valor_compra, 0)
+          WHERE id = @item_id AND tenant_id = @tenant_id
+        `;
+
+        const updateItemRequest = transaction.request();
+        updateItemRequest.input('item_id', body.item_id);
+        updateItemRequest.input('data_saida', dataTransacao);
+        updateItemRequest.input('valor_venda', valorVenda);
+        updateItemRequest.input('tenant_id', tenantId);
+
+        await updateItemRequest.query(updateItemQuery);
+
+        // Commit transaction
+        await transaction.commit();
+
+        return successResponse({
+          id: transacaoId,
+          message: 'Venda criada com sucesso',
+          item_id: body.item_id,
+          cliente_id: body.cliente_id,
+          valor: valorVenda,
+          data_transacao: dataTransacao,
+        }, 201, origin);
+      } catch (error) {
+        // Rollback on error
+        await transaction.rollback();
+        throw error;
+      }
     }
 
     // PUT /api/vendas/{id} - Not implemented

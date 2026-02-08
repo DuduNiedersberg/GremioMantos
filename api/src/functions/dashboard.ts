@@ -9,22 +9,44 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
   try {
     const isPlatformAdmin = user.tipo === 'platform_admin';
-    const tenantFilter = isPlatformAdmin ? '' : `WHERE tenant_id = @tenant_id`;
+    
+    // Platform admin can filter by specific tenant_id via query param
+    const queryTenantId = request.query.get('tenant_id');
+    let tenantId = user.tenantId;
+    let tenantFilter = '';
+    let params: Record<string, any> | undefined = undefined;
+    
+    if (isPlatformAdmin) {
+      if (queryTenantId) {
+        // Filter by specific tenant
+        tenantId = parseInt(queryTenantId);
+        tenantFilter = 'WHERE tenant_id = @tenant_id';
+        params = { tenant_id: tenantId };
+      } else {
+        // Show all tenants (global view)
+        tenantFilter = '';
+        params = undefined;
+      }
+    } else {
+      // Non-admin: always filter by their tenant
+      tenantFilter = 'WHERE tenant_id = @tenant_id';
+      params = { tenant_id: user.tenantId };
+    }
     
     // Calculate metrics from direct queries on itens table
     const metricsQuery = `
       SELECT 
         COUNT(*) as total_itens,
-        SUM(CASE WHEN situacao = 'disponivel' THEN 1 ELSE 0 END) as itens_estoque,
+        SUM(CASE WHEN situacao = 'estoque' THEN 1 ELSE 0 END) as itens_estoque,
         SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN 1 ELSE 0 END) as itens_vendidos,
         SUM(CASE WHEN destino = 'troca' THEN 1 ELSE 0 END) as itens_trocados,
-        SUM(CASE WHEN situacao = 'disponivel' THEN COALESCE(valor_compra, 0) ELSE 0 END) as capital_estoque,
+        SUM(CASE WHEN situacao = 'estoque' THEN COALESCE(valor_compra, 0) ELSE 0 END) as capital_estoque,
         SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_compra, 0) ELSE 0 END) as total_investido_vendas,
         SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_venda, 0) ELSE 0 END) as total_vendas
       FROM dbo.itens
       ${tenantFilter}
     `;
-    const metricsResult = await executeQuery(metricsQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
+    const metricsResult = await executeQuery(metricsQuery, params);
     
     const viewData = metricsResult.recordset[0];
 
@@ -74,19 +96,19 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     const recentQuery = `
       SELECT TOP 5 id, nome, ano, marca, valor_compra, data_aquisicao
       FROM dbo.itens
-      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
+      WHERE situacao = 'estoque' ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
       ORDER BY data_aquisicao DESC
     `;
-    const recentResult = await executeQuery(recentQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
+    const recentResult = await executeQuery(recentQuery, params);
 
     // Top value items from itens table
     const topValueQuery = `
       SELECT TOP 5 id, nome, ano, jogador, valor_compra
       FROM dbo.itens
-      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
+      WHERE situacao = 'estoque' ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
       ORDER BY valor_compra DESC
     `;
-    const topValueResult = await executeQuery(topValueQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
+    const topValueResult = await executeQuery(topValueQuery, params);
 
     // Sales by month from itens table
     const salesByMonthQuery = `
@@ -96,11 +118,11 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
         SUM(COALESCE(valor_venda, 0) - COALESCE(valor_compra, 0)) as total_lucro
       FROM dbo.itens
-      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
+      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${tenantFilter ? `AND ${tenantFilter.replace('WHERE ', '')}` : ''}
       GROUP BY FORMAT(CAST(data_saida AS DATE), 'yyyy-MM')
       ORDER BY mes DESC
     `;
-    const salesByMonthResult = await executeQuery(salesByMonthQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
+    const salesByMonthResult = await executeQuery(salesByMonthQuery, params);
 
     return successResponse({
       metrics,
