@@ -19,9 +19,27 @@ The Azure Functions API has been adapted to match the production Azure SQL schem
 Production schema has these as NOT NULL:
 - `tipo` - defaults to `'camiseta'`
 - `valor_compra` - defaults to `0`
-- `situacao` - defaults to `'disponivel'`
+- `situacao` - defaults to `'estoque'` (items start in inventory)
 
 ## API Endpoint Changes
+
+**Note**: All endpoints now use JWT authentication via `protectedRoute()` middleware. Tenant isolation is enforced on all data endpoints - users can only access data belonging to their tenant (except platform admins).
+
+### `/api/admin/tenants`
+✅ GET - List all tenants (platform admin only)
+✅ GET /{id} - Get tenant details with recent activity (platform admin only)
+✅ POST - Create new tenant (platform admin only)
+✅ PUT /{id} - Update tenant settings (platform admin only)
+✅ PATCH /{id}/toggle-status - Activate/deactivate tenant (platform admin only)
+✅ PATCH /{id}/suspend - Suspend/unsuspend tenant (platform admin only)
+
+### `/api/admin/usuarios`
+✅ GET - List all users (platform/tenant admins, filtered by tenant for tenant admins)
+✅ GET /{id} - Get user details (platform/tenant admins)
+✅ POST - Create new user (platform/tenant admins, tenant admin can only create in their tenant)
+✅ PUT /{id} - Update user (platform/tenant admins, tenant admin cannot create admin roles)
+✅ PATCH /{id}/toggle-status - Activate/deactivate user (platform/tenant admins)
+✅ PATCH /{id}/reset-password - Reset user password (platform/tenant admins)
 
 ### `/api/itens`
 ✅ GET - Returns items with `numero` field (mapped from `numero_camisa`)
@@ -30,11 +48,11 @@ Production schema has these as NOT NULL:
 ✅ DELETE - No changes
 
 ### `/api/vendas`
-✅ GET - Reads from `dbo.vw_historico_vendas` with pagination and search
-✅ GET /{id} - Reads single sale from view
-❌ POST - Returns 501 Not Implemented (no table to write to)
-❌ PUT - Returns 501 Not Implemented
-❌ DELETE - Returns 501 Not Implemented
+✅ GET - Reads from itens table with `situacao = 'vendida'`, includes JOIN to transacoes and clientes for full sale details
+✅ GET /{id} - Reads single sale from itens table
+✅ POST - Creates atomic transaction: inserts into `transacoes` table, creates `venda_detalhes` record, and updates item `situacao` to `'vendida'` (fully functional)
+❌ PUT - Returns 501 Not Implemented (sales are immutable)
+❌ DELETE - Returns 501 Not Implemented (sales are immutable)
 
 ### `/api/dashboard`
 ✅ Fixed `ISNULL` → `COALESCE` for NULL handling
@@ -80,12 +98,11 @@ The migration is idempotent and can be run multiple times safely.
 - CORS headers maintained on all responses
 
 ### Breaking Changes
-- **Vendas POST/PUT/DELETE**: Now return 501 Not Implemented
-  - To record a sale, update the item in `/api/itens` with:
-    - `situacao: 'vendido'`
-    - `destino: 'venda'`
-    - `data_saida: <date>`
-    - `valor_venda: <amount>`
+- **Vendas POST**: Now fully functional - creates atomic transaction with `transacoes` + `venda_detalhes` + updates item to `situacao: 'vendida'`
+- **Vendas PUT/DELETE**: Return 501 Not Implemented (sales are immutable after creation)
+- **Item situacao values**: Correct value for sold items is `'vendida'` (not `'vendido'`)
+- **Authentication**: All endpoints require JWT authentication via Bearer token
+- **Tenant Isolation**: Users can only access data within their tenant (except platform admins)
 
 ## Testing Checklist
 
