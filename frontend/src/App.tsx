@@ -13,6 +13,9 @@ import TrocaHistorico from './features/trocas/TrocaHistorico';
 import LotesList from './features/lotes/LotesList';
 import Wishlist from './features/wishlist/Wishlist';
 import ClientesList from './features/clientes/ClientesList';
+import UsuariosList from './features/admin/UsuariosList';
+import TenantsList from './features/admin/TenantsList';
+import PlanosList from './features/admin/PlanosList';
 
 // Loading skeleton component
 const LoadingSkeleton = () => (
@@ -75,6 +78,11 @@ function App() {
             
             {/* Customers */}
             <Route path="clientes" element={<ClientesList />} />
+            
+            {/* Admin */}
+            <Route path="admin/usuarios" element={<UsuariosList />} />
+            <Route path="admin/tenants" element={<TenantsList />} />
+            <Route path="admin/planos" element={<PlanosList />} />
             
             {/* 404 */}
             <Route path="*" element={<Navigate to="/" replace />} />
