@@ -2,24 +2,33 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function dashboardHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function dashboardHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
 
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
-
   try {
-    // Get metrics from view
-    const metricsQuery = 'SELECT TOP 1 * FROM dbo.vw_dashboard_metricas';
+    const isPlatformAdmin = user.tipo === 'platform_admin';
+    const tenantFilter = isPlatformAdmin ? '' : `WHERE tenant_id = '${user.tenantId}'`;
+    
+    // Calculate metrics from direct queries on itens table
+    const metricsQuery = `
+      SELECT 
+        COUNT(*) as total_itens,
+        SUM(CASE WHEN situacao = 'disponivel' THEN 1 ELSE 0 END) as itens_estoque,
+        SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN 1 ELSE 0 END) as itens_vendidos,
+        SUM(CASE WHEN destino = 'troca' THEN 1 ELSE 0 END) as itens_trocados,
+        SUM(CASE WHEN situacao = 'disponivel' THEN COALESCE(valor_compra, 0) ELSE 0 END) as capital_estoque,
+        SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_compra, 0) ELSE 0 END) as total_investido_vendas,
+        SUM(CASE WHEN situacao = 'vendida' AND destino = 'venda' THEN COALESCE(valor_venda, 0) ELSE 0 END) as total_vendas
+      FROM dbo.itens
+      ${tenantFilter}
+    `;
     const metricsResult = await executeQuery(metricsQuery);
     
     const viewData = metricsResult.recordset[0];
 
     if (!viewData) {
-      // If view returns no data, return zeros
       const metrics = {
         total_itens: 0,
         total_disponiveis: 0,
@@ -39,55 +48,55 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
       return successResponse({ metrics }, 200, origin);
     }
 
-    // Map view column names to frontend-expected names
-    // View columns: total_itens, itens_estoque, itens_vendidos, itens_trocados, capital_estoque, total_investido_vendas, total_vendas, lucro_total, margem_media
+    const totalInvestidoVendas = Number(viewData.total_investido_vendas) || 0;
+    const totalVendas = Number(viewData.total_vendas) || 0;
+    const lucroTotal = totalVendas - totalInvestidoVendas;
+    const margemMedia = totalInvestidoVendas > 0 ? (lucroTotal / totalInvestidoVendas) * 100 : 0;
+
     const metrics = {
-      // Core counts
       total_itens: Number(viewData.total_itens) || 0,
-      total_disponiveis: Number(viewData.itens_estoque) || 0, // Map itens_estoque → total_disponiveis
-      itens_estoque: Number(viewData.itens_estoque) || 0,     // Also keep original name
-      total_vendidos: Number(viewData.itens_vendidos) || 0,   // Map itens_vendidos → total_vendidos
-      itens_vendidos: Number(viewData.itens_vendidos) || 0,   // Also keep original
+      total_disponiveis: Number(viewData.itens_estoque) || 0,
+      itens_estoque: Number(viewData.itens_estoque) || 0,
+      total_vendidos: Number(viewData.itens_vendidos) || 0,
+      itens_vendidos: Number(viewData.itens_vendidos) || 0,
       itens_trocados:  Number(viewData.itens_trocados) || 0,
-      
-      // Values
       capital_estoque: Number(viewData.capital_estoque) || 0,
-      valor_acervo_atual: Number(viewData.capital_estoque) || 0, // Map capital_estoque → valor_acervo_atual
-      
-      total_investido_vendas: Number(viewData.total_investido_vendas) || 0,
-      valor_total_investido: Number(viewData.total_investido_vendas) || 0, // Map for compatibility
-      
-      total_vendas: Number(viewData.total_vendas) || 0,
-      valor_total_vendas:  Number(viewData.total_vendas) || 0, // Map for compatibility
-      
-      lucro_total: Number(viewData. lucro_total) || 0,
-      margem_media:  Number(viewData.margem_media) || 0,
+      valor_acervo_atual: Number(viewData.capital_estoque) || 0,
+      total_investido_vendas: totalInvestidoVendas,
+      valor_total_investido: totalInvestidoVendas,
+      total_vendas: totalVendas,
+      valor_total_vendas:  totalVendas,
+      lucro_total: lucroTotal,
+      margem_media:  margemMedia,
     };
 
-    // Optional: Get recent items, top value, sales by month (frontend doesn't use them yet)
-    // Keeping these for future use or if you want to add charts/lists later
+    // Recent items from itens table
     const recentQuery = `
       SELECT TOP 5 id, nome, ano, marca, valor_compra, data_aquisicao
-      FROM dbo.vw_inventario_disponivel
+      FROM dbo.itens
+      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
       ORDER BY data_aquisicao DESC
     `;
     const recentResult = await executeQuery(recentQuery);
 
+    // Top value items from itens table
     const topValueQuery = `
       SELECT TOP 5 id, nome, ano, jogador, valor_compra
-      FROM dbo.vw_inventario_disponivel
+      FROM dbo.itens
+      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
       ORDER BY valor_compra DESC
     `;
     const topValueResult = await executeQuery(topValueQuery);
 
+    // Sales by month from itens table
     const salesByMonthQuery = `
       SELECT 
         FORMAT(CAST(data_saida AS DATE), 'yyyy-MM') as mes,
         COUNT(*) as quantidade,
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
-        SUM(COALESCE(lucro_calculado, 0)) as total_lucro
-      FROM dbo.vw_historico_vendas
-      WHERE data_saida IS NOT NULL
+        SUM(COALESCE(valor_venda, 0) - COALESCE(valor_compra, 0)) as total_lucro
+      FROM dbo.itens
+      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
       GROUP BY FORMAT(CAST(data_saida AS DATE), 'yyyy-MM')
       ORDER BY mes DESC
     `;
@@ -104,9 +113,19 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
   }
 }
 
+async function dashboardHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
+  return protectedRoute(dashboardHandler)(request, context);
+}
+
 app.http('dashboard', {
   methods: ['GET', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'dashboard',
-  handler: dashboardHandler,
+  handler: dashboardHandlerWrapper,
 });
