@@ -3,20 +3,16 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { clampPagination, safeParseJson } from '../lib/utils';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function vendasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function vendasHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
-
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
 
   try {
     const method = request.method;
     const id = request.params.id;
 
-    // GET /api/vendas - List all sales from view
+    // GET /api/vendas - List all sales from itens table
     if (method === 'GET' && !id) {
       const rawPage = parseInt(request.query.get('page') || '1');
       const rawPerPage = parseInt(request.query.get('perPage') || '30');
@@ -24,34 +20,44 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       const search = request.query.get('search');
       const offset = (page - 1) * perPage;
 
-      let whereClause = 'WHERE 1=1';
-      const params: Record<string, any> = {};
+      let whereClause = 'WHERE i.situacao = @situacao AND i.destino = @destino';
+      const params: Record<string, any> = {
+        situacao: 'vendida',
+        destino: 'venda',
+      };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND i.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
 
       if (search) {
-        whereClause += ' AND (nome LIKE @search OR jogador LIKE @search OR marca LIKE @search OR cliente_nome LIKE @search)';
+        whereClause += ' AND (i.nome LIKE @search OR i.jogador LIKE @search OR i.marca LIKE @search OR c.nome LIKE @search)';
         params.search = `%${search}%`;
       }
 
-      const countQuery = `SELECT COUNT(*) as total FROM dbo.vw_historico_vendas ${whereClause}`;
+      const countQuery = `SELECT COUNT(*) as total FROM dbo.itens i ${whereClause}`;
       const countResult = await executeQuery<{ total: number }>(countQuery, params);
       const total = countResult.recordset[0].total;
 
       const query = `
   SELECT 
-    id,
-    id as item_id,
-    nome as item_nome,
-    ano, tipo, marca, jogador,
-    valor_compra,
-    valor_venda,
-    lucro_calculado as lucro,
-    data_saida as data_venda,
-    destino,
-    cliente_id,
-    cliente_nome
-  FROM dbo.vw_historico_vendas
+    i.id,
+    i.id as item_id,
+    i.nome as item_nome,
+    i.ano, i.tipo, i.marca, i.jogador,
+    i.valor_compra,
+    i.valor_venda,
+    (i.valor_venda - i.valor_compra) as lucro,
+    i.data_saida as data_venda,
+    i.destino,
+    i.cliente_id,
+    c.nome as cliente_nome
+  FROM dbo.itens i
+  LEFT JOIN dbo.clientes c ON i.cliente_id = c.id
   ${whereClause}
-  ORDER BY data_saida DESC
+  ORDER BY i.data_saida DESC
   OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
 `;
 
@@ -66,17 +72,32 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
       }, 200, origin);
     }
 
-    // GET /api/vendas/{id} - Get single sale from view
+    // GET /api/vendas/{id} - Get single sale from itens table
     if (method === 'GET' && id) {
+      let whereClause = 'WHERE i.situacao = @situacao AND i.destino = @destino AND i.id = @id';
+      const params: Record<string, any> = {
+        situacao: 'vendida',
+        destino: 'venda',
+        id: id,
+      };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND i.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       const query = `
         SELECT 
-          id, nome, ano, tipo, marca, jogador, 
-          valor_compra, valor_venda, lucro_calculado, 
-          data_saida, destino, cliente_id, cliente_nome
-        FROM dbo.vw_historico_vendas
-        WHERE id = @id
+          i.id, i.nome, i.ano, i.tipo, i.marca, i.jogador, 
+          i.valor_compra, i.valor_venda, 
+          (i.valor_venda - i.valor_compra) as lucro_calculado, 
+          i.data_saida, i.destino, i.cliente_id, c.nome as cliente_nome
+        FROM dbo.itens i
+        LEFT JOIN dbo.clientes c ON i.cliente_id = c.id
+        ${whereClause}
       `;
-      const result = await executeQuery(query, { id });
+      const result = await executeQuery(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Venda não encontrada' }, 404, origin);
@@ -97,16 +118,17 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
         }, 400, origin);
       }
 
+      const tenantId = user.tipo === 'platform_admin' && body.tenant_id ? body.tenant_id : user.tenantId;
       const dataTransacao = body.data_venda || new Date().toISOString().split('T')[0];
 
       // Create transaction
       const insertQuery = `
         INSERT INTO transacoes (
-          tipo_transacao, item_id, cliente_id, valor, data_transacao, observacoes
+          tipo_transacao, item_id, cliente_id, valor, data_transacao, observacoes, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
-          'venda', @item_id, @cliente_id, @valor, @data_transacao, @observacoes
+          'venda', @item_id, @cliente_id, @valor, @data_transacao, @observacoes, @tenant_id
         )
       `;
 
@@ -116,6 +138,7 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
         valor: body.valor || body.valor_venda,
         data_transacao: dataTransacao,
         observacoes: body.observacoes,
+        tenant_id: tenantId,
       });
 
       // Update item status
@@ -125,13 +148,14 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
             destino = 'venda',
             data_saida = @data_saida,
             valor_venda = @valor_venda
-        WHERE id = @item_id
+        WHERE id = @item_id AND tenant_id = @tenant_id
       `;
 
       await executeQuery(updateItemQuery, {
         item_id: body.item_id,
         data_saida: dataTransacao,
         valor_venda: body.valor || body.valor_venda,
+        tenant_id: tenantId,
       });
 
       return successResponse({
@@ -162,9 +186,19 @@ async function vendasHandler(request: HttpRequest, context: InvocationContext): 
   }
 }
 
+async function vendasHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+
+  return protectedRoute(vendasHandler)(request, context);
+}
+
 app.http('vendas', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'vendas/{id?}',
-  handler: vendasHandler,
+  handler: vendasHandlerWrapper,
 });

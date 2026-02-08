@@ -67,8 +67,10 @@ export const clienteSchema = z.object({
   telefone: z.string().optional(),
   instagram: z.string().optional(),
   cidade: z.string().optional(),
-  tipo: z.enum(['cliente', 'fornecedor', 'colecionador', 'ambos']).default('cliente'),
+  tipo: z.enum(['vendedor', 'comprador', 'ambos']).default('comprador'),
   observacoes: z.string().optional(),
+  tipo_cliente: z.enum(['usuario', 'externo', 'parceiro']).optional(), // Tipo do cliente na plataforma: usuario (conta registrada), externo (cliente sem conta), parceiro (fornecedor/parceria)
+  tenant_id: z.number().int().positive().optional(),
 });
 
 export const itemSchema = z.object({
@@ -81,7 +83,7 @@ export const itemSchema = z.object({
   numero: z.number().int().min(0).max(99).nullish(), // Mapeado para numero_camisa
   tamanho: z.string().nullish(),
   cor_principal: z.string().nullish(),
-  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).default('usada').nullish(),
+  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).nullish(),
   autografada: z.boolean().nullish(),
   autografo_descricao: z.string().nullish(),
   valor_compra: z.number().min(0).default(0).nullish(),
@@ -93,6 +95,7 @@ export const itemSchema = z.object({
   observacoes: z.string().nullish(),
   lote_id: z.number().int().nullish(),
   valor_mercado: z.number().min(0).nullish(),
+  tenant_id: z.number().int().positive().optional(),
 });
 
 export const vendaSchema = z.object({
@@ -101,8 +104,8 @@ export const vendaSchema = z.object({
   valor_venda: z.number().min(0),
   valor_compra: z.number().min(0).optional(),
   data_venda: z.string().optional(),
-  forma_pagamento: z.string().optional(),
   observacoes: z.string().optional(),
+  tenant_id: z.number().int().positive().optional(),
 });
 
 export const trocaSchema = z.object({
@@ -116,6 +119,7 @@ export const trocaSchema = z.object({
   data_troca: z.string().optional(),
   observacoes: z.string().optional(),
   status: z.enum(['ativa', 'cancelada']).optional(),
+  tenant_id: z.number().int().positive().optional(),
 }).refine(
   (data) => data.item_recebido_id || data.item_recebido_nome,
   { message: 'Informe item_recebido_id ou item_recebido_nome', path: ['item_recebido_id'] }
@@ -137,13 +141,14 @@ const trocaBaseSchema = z.object({
 export const trocaUpdateSchema = trocaBaseSchema.partial();
 
 export const transacaoSchema = z.object({
-  tipo_transacao: z.enum(['compra', 'venda', 'troca']),
-  item_id: z.number().int().positive(),
+  tipo_transacao: z.enum(['venda', 'compra', 'troca']),
+  item_id: z.number().int().positive().optional(),
   cliente_id: z.number().int().positive().optional(),
-  valor: z.number().min(0),
+  valor: z.number().min(0).optional(),
   data_transacao: z.string().optional(),
-  forma_pagamento: z.string().optional(),
   observacoes: z.string().optional(),
+  status: z.enum(['pendente', 'concluida', 'cancelada', 'estornada']).optional(),
+  tenant_id: z.number().int().positive().optional(),
 }).refine(
   (data) => {
     // Sale transactions require cliente_id
@@ -160,16 +165,15 @@ export const transacaoSchema = z.object({
 
 export const loteSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  quantidade_total: z.number().int().min(0).optional(),
-  quantidade_disponivel: z.number().int().min(0).optional(),
+  quantidade_total: z.number().int().min(0),
+  quantidade_disponivel: z.number().int().min(0),
   valor_unitario_compra: z.number().min(0).optional(),
   data_aquisicao: z.string().optional(),
   observacoes: z.string().optional(),
+  tenant_id: z.number().int().positive().optional(),
 }).refine(
   (data) => {
-    if (data.quantidade_disponivel !== undefined && 
-        data.quantidade_total !== undefined && 
-        data.quantidade_disponivel > data.quantidade_total) {
+    if (data.quantidade_disponivel > data.quantidade_total) {
       return false;
     }
     return true;
@@ -191,6 +195,7 @@ export const wishlistSchema = z.object({
   prioridade: z.enum(['baixa', 'media', 'alta', 'urgente']).default('media'),
   observacoes: z.string().nullish(),
   status: z.enum(['ativo', 'encontrado', 'desistido']).default('ativo'),
+  tenant_id: z.number().int().positive().optional(),
 });
 
 export const historicoPrecoSchema = z.object({
@@ -200,6 +205,7 @@ export const historicoPrecoSchema = z.object({
   fonte: z.string().optional(),
   data_registro: z.string().optional(),
   observacoes: z.string().optional(),
+  tenant_id: z.number().int().positive().optional(),
 });
 
 // --- MULTITENANCY ---

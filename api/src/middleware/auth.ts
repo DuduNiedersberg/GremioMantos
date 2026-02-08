@@ -1,6 +1,8 @@
 import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions"
 import { verifyToken, JWTPayload } from '../lib/utils'
 
+export type { JWTPayload }
+
 export function requireAuth(request: HttpRequest): HttpResponseInit | null {
   const authHeader = request.headers.get('authorization')
 

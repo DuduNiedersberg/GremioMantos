@@ -4,14 +4,10 @@ import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { Cliente } from '../lib/types';
 import { clienteSchema, safeParseJson, clampPagination } from '../lib/utils';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function clientesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function clientesHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
-
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
 
   try {
     const method = request.method;
@@ -27,6 +23,11 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
       let whereClause = 'WHERE 1=1';
       const params: Record<string, any> = {};
+
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
 
       if (search) {
         whereClause += ' AND (nome LIKE @search OR apelido LIKE @search OR instagram LIKE @search OR cidade LIKE @search)';
@@ -57,8 +58,15 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
 
     // GET /api/clientes/{id} - Get single customer with purchase history
     if (method === 'GET' && id) {
-      const clienteQuery = 'SELECT * FROM clientes WHERE id = @id';
-      const clienteResult = await executeQuery<Cliente>(clienteQuery, { id });
+      let clienteQuery = 'SELECT * FROM clientes WHERE id = @id';
+      const clienteParams: Record<string, any> = { id };
+      
+      if (user.tipo !== 'platform_admin') {
+        clienteQuery += ' AND tenant_id = @tenant_id';
+        clienteParams.tenant_id = user.tenantId;
+      }
+      
+      const clienteResult = await executeQuery<Cliente>(clienteQuery, clienteParams);
 
       if (clienteResult.recordset.length === 0) {
         return successResponse({ error: 'Cliente não encontrado' }, 404, origin);
@@ -85,17 +93,19 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
       const body = await safeParseJson(request);
       const validated = clienteSchema.parse(body);
 
+      const tenant_id = user.tipo === 'platform_admin' && validated.tenant_id ? validated.tenant_id : user.tenantId;
+
       const query = `
         INSERT INTO clientes (
-          nome, apelido, telefone, instagram, cidade, tipo, observacoes
+          nome, apelido, telefone, instagram, cidade, tipo, observacoes, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
-          @nome, @apelido, @telefone, @instagram, @cidade, @tipo, @observacoes
+          @nome, @apelido, @telefone, @instagram, @cidade, @tipo, @observacoes, @tenant_id
         )
       `;
 
-      const result = await executeQuery<Cliente>(query, validated);
+      const result = await executeQuery<Cliente>(query, { ...validated, tenant_id });
       return successResponse(result.recordset[0], 201, origin);
     }
 
@@ -108,14 +118,22 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
         .map(key => `${key} = @${key}`)
         .join(', ');
 
+      let whereClause = 'WHERE id = @id';
+      const updateParams: Record<string, any> = { ...validated, id };
+      
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        updateParams.tenant_id = user.tenantId;
+      }
+
       const query = `
         UPDATE clientes 
         SET ${setClauses}
         OUTPUT INSERTED.*
-        WHERE id = @id
+        ${whereClause}
       `;
 
-      const result = await executeQuery<Cliente>(query, { ...validated, id });
+      const result = await executeQuery<Cliente>(query, updateParams);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Cliente não encontrado' }, 404, origin);
@@ -127,10 +145,15 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
     // DELETE /api/clientes/{id} - Delete customer
     if (method === 'DELETE' && id) {
       // Check FK: transacoes
-      const checkTransacoes = await executeQuery<{ count: number }>(
-        'SELECT COUNT(*) as count FROM transacoes WHERE cliente_id = @id',
-        { id }
-      );
+      let checkQuery = 'SELECT COUNT(*) as count FROM transacoes WHERE cliente_id = @id';
+      const checkParams: Record<string, any> = { id };
+      
+      if (user.tipo !== 'platform_admin') {
+        checkQuery += ' AND tenant_id = @tenant_id';
+        checkParams.tenant_id = user.tenantId;
+      }
+      
+      const checkTransacoes = await executeQuery<{ count: number }>(checkQuery, checkParams);
       
       if (checkTransacoes.recordset[0].count > 0) {
         return successResponse({
@@ -139,8 +162,15 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
         }, 409, origin);
       }
       
-      const query = 'DELETE FROM clientes WHERE id = @id';
-      await executeQuery(query, { id });
+      let deleteQuery = 'DELETE FROM clientes WHERE id = @id';
+      const deleteParams: Record<string, any> = { id };
+      
+      if (user.tipo !== 'platform_admin') {
+        deleteQuery += ' AND tenant_id = @tenant_id';
+        deleteParams.tenant_id = user.tenantId;
+      }
+      
+      await executeQuery(deleteQuery, deleteParams);
       return successResponse({ message: 'Cliente excluído com sucesso' }, 200, origin);
     }
 
@@ -150,9 +180,19 @@ async function clientesHandler(request: HttpRequest, context: InvocationContext)
   }
 }
 
+async function clientesHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+  
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+  
+  return protectedRoute(clientesHandler)(request, context);
+}
+
 app.http('clientes', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'clientes/{id?}',
-  handler: clientesHandler,
+  handler: clientesHandlerWrapper,
 });

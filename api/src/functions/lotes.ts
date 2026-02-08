@@ -4,14 +4,10 @@ import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { loteSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Lote } from '../lib/types';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function lotesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function lotesHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
-
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
 
   try {
     const method = request.method;
@@ -24,17 +20,20 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       const { page, perPage } = clampPagination(rawPage, rawPerPage);
       const offset = (page - 1) * perPage;
 
-      const countQuery = 'SELECT COUNT(*) as total FROM lotes';
-      const countResult = await executeQuery<{ total: number }>(countQuery);
+      const isPlatformAdmin = user.tipo === 'platform_admin';
+      const tenantFilter = isPlatformAdmin ? '' : ' WHERE tenant_id = @tenant_id';
+      const countQuery = `SELECT COUNT(*) as total FROM lotes${tenantFilter}`;
+      const countParams = isPlatformAdmin ? {} : { tenant_id: user.tenantId };
+      const countResult = await executeQuery<{ total: number }>(countQuery, countParams);
       const total = countResult.recordset[0].total;
 
       const query = `
-        SELECT * FROM lotes
+        SELECT * FROM lotes${tenantFilter}
         ORDER BY data_aquisicao DESC
         OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
 
-      const result = await executeQuery<Lote>(query);
+      const result = await executeQuery<Lote>(query, countParams);
 
       return successResponse({
         data: result.recordset,
@@ -47,8 +46,11 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // GET /api/lotes/{id} - Get single batch with items
     if (method === 'GET' && id) {
-      const loteQuery = 'SELECT * FROM lotes WHERE id = @id';
-      const loteResult = await executeQuery<Lote>(loteQuery, { id });
+      const isPlatformAdmin = user.tipo === 'platform_admin';
+      const tenantFilter = isPlatformAdmin ? '' : ' AND tenant_id = @tenant_id';
+      const loteQuery = `SELECT * FROM lotes WHERE id = @id${tenantFilter}`;
+      const params = isPlatformAdmin ? { id } : { id, tenant_id: user.tenantId };
+      const loteResult = await executeQuery<Lote>(loteQuery, params);
 
       if (loteResult.recordset.length === 0) {
         return successResponse({ error: 'Lote não encontrado' }, 404, origin);
@@ -68,21 +70,26 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       const body = await safeParseJson(request);
       const validated = loteSchema.parse(body);
 
+      const tenantId = user.tipo === 'platform_admin' && validated.tenant_id 
+        ? validated.tenant_id 
+        : user.tenantId;
+
       const query = `
         INSERT INTO lotes (
           nome, quantidade_total, quantidade_disponivel, 
-          valor_unitario_compra, data_aquisicao, observacoes
+          valor_unitario_compra, data_aquisicao, observacoes, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
           @nome, @quantidade_total, @quantidade_disponivel,
-          @valor_unitario_compra, @data_aquisicao, @observacoes
+          @valor_unitario_compra, @data_aquisicao, @observacoes, @tenant_id
         )
       `;
 
       const result = await executeQuery<Lote>(query, {
         ...validated,
         data_aquisicao: validated.data_aquisicao || new Date().toISOString().split('T')[0],
+        tenant_id: tenantId,
       });
 
       return successResponse(result.recordset[0], 201, origin);
@@ -112,8 +119,11 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       }
       
       // Validate quantity constraint if both fields are present or being updated
-      const existingQuery = 'SELECT quantidade_total, quantidade_disponivel FROM lotes WHERE id = @id';
-      const existingResult = await executeQuery<Lote>(existingQuery, { id });
+      const isPlatformAdmin = user.tipo === 'platform_admin';
+      const tenantFilter = isPlatformAdmin ? '' : ' AND tenant_id = @tenant_id';
+      const existingQuery = `SELECT quantidade_total, quantidade_disponivel FROM lotes WHERE id = @id${tenantFilter}`;
+      const params = isPlatformAdmin ? { id } : { id, tenant_id: user.tenantId };
+      const existingResult = await executeQuery<Lote>(existingQuery, params);
       
       if (existingResult.recordset.length === 0) {
         return successResponse({ error: 'Lote não encontrado' }, 404, origin);
@@ -141,10 +151,10 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
           UPDATE lotes 
           SET ${setClauses}
           OUTPUT INSERTED.*
-          WHERE id = @id
+          WHERE id = @id${tenantFilter}
         `;
 
-        const result = await executeQuery<Lote>(query, { ...validated, id });
+        const result = await executeQuery<Lote>(query, { ...validated, ...params });
 
         if (result.recordset.length === 0) {
           return successResponse({ error: 'Lote não encontrado' }, 404, origin);
@@ -154,8 +164,8 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
       }
 
       // If no fields to update, fetch and return current record
-      const getQuery = 'SELECT * FROM lotes WHERE id = @id';
-      const getResult = await executeQuery<Lote>(getQuery, { id });
+      const getQuery = `SELECT * FROM lotes WHERE id = @id${tenantFilter}`;
+      const getResult = await executeQuery<Lote>(getQuery, params);
       
       if (getResult.recordset.length === 0) {
         return successResponse({ error: 'Lote não encontrado' }, 404, origin);
@@ -166,11 +176,24 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
 
     // DELETE /api/lotes/{id} - Delete batch
     if (method === 'DELETE' && id) {
-      // First, unlink items from this batch
-      await executeQuery('UPDATE itens SET lote_id = NULL WHERE lote_id = @id', { id });
+      const isPlatformAdmin = user.tipo === 'platform_admin';
+      const tenantFilter = isPlatformAdmin ? '' : ' AND tenant_id = @tenant_id';
+      const params = isPlatformAdmin ? { id } : { id, tenant_id: user.tenantId };
       
-      const query = 'DELETE FROM lotes WHERE id = @id';
-      await executeQuery(query, { id });
+      // First, verify the lote exists and user has access, then unlink items
+      const verifyQuery = `SELECT id, tenant_id FROM lotes WHERE id = @id${tenantFilter}`;
+      const verifyResult = await executeQuery<{ id: number; tenant_id: number }>(verifyQuery, params);
+      
+      if (verifyResult.recordset.length === 0) {
+        return successResponse({ error: 'Lote não encontrado' }, 404, origin);
+      }
+      
+      const lote = verifyResult.recordset[0];
+      await executeQuery('UPDATE itens SET lote_id = NULL WHERE lote_id = @id AND tenant_id = @tenant_id', 
+        { id, tenant_id: lote.tenant_id });
+      
+      const query = `DELETE FROM lotes WHERE id = @id${tenantFilter}`;
+      await executeQuery(query, params);
       
       return successResponse({ message: 'Lote excluído com sucesso' }, 200, origin);
     }
@@ -181,9 +204,19 @@ async function lotesHandler(request: HttpRequest, context: InvocationContext): P
   }
 }
 
+async function lotesHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+  
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+  
+  return protectedRoute(lotesHandler)(request, context);
+}
+
 app.http('lotes', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'lotes/{id?}',
-  handler: lotesHandler,
+  handler: lotesHandlerWrapper,
 });

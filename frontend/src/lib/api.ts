@@ -13,6 +13,11 @@ const api: AxiosInstance = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
+    // Inject Authorization header from localStorage
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => {
@@ -28,6 +33,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response) {
       console.error('API Error:', error.response.data);
+      
+      // Handle 401 Unauthorized - redirect to login
+      if (error.response.status === 401) {
+        // Don't redirect if already on login page
+        if (!window.location.pathname.includes('/login')) {
+          localStorage.removeItem('token');
+          window.location.href = '/GremioMantos/login';
+        }
+      }
     } else if (error.request) {
       console.error('Network Error:', error.request);
     } else {
@@ -38,6 +52,11 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Auth API Methods
+export const authLogin = (email: string, senha: string) => api.post('/auth/login', { email, senha });
+export const authRegister = (data: any) => api.post('/auth/register', data);
+export const authMe = () => api.get('/auth/me');
 
 // API Methods
 export const healthCheck = () => api.get('/health');

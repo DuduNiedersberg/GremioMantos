@@ -4,14 +4,20 @@ import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { wishlistSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { WishlistItem } from '../lib/types';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function wishlistHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function wishlistHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
 
-  // Handle preflight
   if (request.method === 'OPTIONS') {
     return handlePreflight(origin);
   }
+
+  return protectedRoute(wishlistHandler)(request, context);
+}
+
+async function wishlistHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
 
   try {
     const method = request.method;
@@ -21,13 +27,21 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
     // POST /api/wishlist/{id}/converter - Convert wishlist item to actual item
     if (method === 'POST' && id && action === 'converter') {
       // Get the wishlist item with only needed columns
-      const getQuery = `
-        SELECT id, nome, ano, marca, modelo, jogador, tamanho, 
-               valor_estimado, observacoes 
-        FROM wishlist 
-        WHERE id = @id
-      `;
-      const getResult = await executeQuery<WishlistItem>(getQuery, { id });
+      const getQuery = user.tipo === 'platform_admin'
+        ? `
+          SELECT id, nome, ano, marca, modelo, jogador, tamanho, 
+                 valor_estimado, observacoes, tenant_id 
+          FROM wishlist 
+          WHERE id = @id
+        `
+        : `
+          SELECT id, nome, ano, marca, modelo, jogador, tamanho, 
+                 valor_estimado, observacoes, tenant_id 
+          FROM wishlist 
+          WHERE id = @id AND tenant_id = @tenant_id
+        `;
+      const getParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const getResult = await executeQuery<WishlistItem>(getQuery, getParams);
 
       if (getResult.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado na wishlist' }, 404, origin);
@@ -42,12 +56,12 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
       const createItemQuery = `
         INSERT INTO itens (
           tipo, nome, ano, marca, modelo, jogador, tamanho,
-          valor_compra, situacao, observacoes
+          valor_compra, situacao, observacoes, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
           'camiseta', @nome, @ano, @marca, @modelo, @jogador, @tamanho,
-          @valor_compra, 'estoque', @observacoes
+          @valor_compra, 'estoque', @observacoes, @tenant_id
         )
       `;
 
@@ -60,17 +74,26 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
         tamanho: wishlistItem.tamanho,
         valor_compra: body.valor_compra || wishlistItem.valor_estimado || 0,
         observacoes: wishlistItem.observacoes,
+        tenant_id: wishlistItem.tenant_id,
       });
 
       // Update wishlist status
-      const updateWishlistQuery = `
-        UPDATE wishlist
-        SET status = 'encontrado'
-        OUTPUT INSERTED.*
-        WHERE id = @id
-      `;
+      const updateWishlistQuery = user.tipo === 'platform_admin'
+        ? `
+          UPDATE wishlist
+          SET status = 'encontrado'
+          OUTPUT INSERTED.*
+          WHERE id = @id
+        `
+        : `
+          UPDATE wishlist
+          SET status = 'encontrado'
+          OUTPUT INSERTED.*
+          WHERE id = @id AND tenant_id = @tenant_id
+        `;
 
-      const wishlistResult = await executeQuery<WishlistItem>(updateWishlistQuery, { id });
+      const updateParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const wishlistResult = await executeQuery<WishlistItem>(updateWishlistQuery, updateParams);
 
       return successResponse({
         item: itemResult.recordset[0],
@@ -90,6 +113,11 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
       let whereClause = 'WHERE 1=1';
       const params: Record<string, any> = {};
+
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
 
       if (status) {
         whereClause += ' AND status = @status';
@@ -132,8 +160,11 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // GET /api/wishlist/{id} - Get single wishlist item
     if (method === 'GET' && id) {
-      const query = 'SELECT * FROM wishlist WHERE id = @id';
-      const result = await executeQuery<WishlistItem>(query, { id });
+      const query = user.tipo === 'platform_admin'
+        ? 'SELECT * FROM wishlist WHERE id = @id'
+        : 'SELECT * FROM wishlist WHERE id = @id AND tenant_id = @tenant_id';
+      const params = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const result = await executeQuery<WishlistItem>(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado na wishlist' }, 404, origin);
@@ -147,19 +178,23 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
       const body = await safeParseJson(request);
       const validated = wishlistSchema.parse(body);
 
+      const tenantId = user.tipo === 'platform_admin' && (validated as any).tenant_id 
+        ? (validated as any).tenant_id 
+        : user.tenantId;
+
       const query = `
         INSERT INTO wishlist (
           nome, ano, marca, modelo, jogador, tamanho, valor_estimado,
-          prioridade, observacoes, status
+          prioridade, observacoes, status, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
           @nome, @ano, @marca, @modelo, @jogador, @tamanho, @valor_estimado,
-          @prioridade, @observacoes, @status
+          @prioridade, @observacoes, @status, @tenant_id
         )
       `;
 
-      const result = await executeQuery<WishlistItem>(query, validated);
+      const result = await executeQuery<WishlistItem>(query, { ...validated, tenant_id: tenantId });
       return successResponse(result.recordset[0], 201, origin);
     }
 
@@ -172,14 +207,24 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
         .map(key => `${key} = @${key}`)
         .join(', ');
 
-      const query = `
-        UPDATE wishlist 
-        SET ${setClauses}
-        OUTPUT INSERTED.*
-        WHERE id = @id
-      `;
+      const query = user.tipo === 'platform_admin'
+        ? `
+          UPDATE wishlist 
+          SET ${setClauses}
+          OUTPUT INSERTED.*
+          WHERE id = @id
+        `
+        : `
+          UPDATE wishlist 
+          SET ${setClauses}
+          OUTPUT INSERTED.*
+          WHERE id = @id AND tenant_id = @tenant_id
+        `;
 
-      const result = await executeQuery<WishlistItem>(query, { ...validated, id });
+      const params = user.tipo === 'platform_admin' 
+        ? { ...validated, id } 
+        : { ...validated, id, tenant_id: user.tenantId };
+      const result = await executeQuery<WishlistItem>(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Item não encontrado na wishlist' }, 404, origin);
@@ -190,8 +235,11 @@ async function wishlistHandler(request: HttpRequest, context: InvocationContext)
 
     // DELETE /api/wishlist/{id} - Delete wishlist item
     if (method === 'DELETE' && id) {
-      const query = 'DELETE FROM wishlist WHERE id = @id';
-      await executeQuery(query, { id });
+      const query = user.tipo === 'platform_admin'
+        ? 'DELETE FROM wishlist WHERE id = @id'
+        : 'DELETE FROM wishlist WHERE id = @id AND tenant_id = @tenant_id';
+      const params = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      await executeQuery(query, params);
       return successResponse({ message: 'Item removido da wishlist' }, 200, origin);
     }
 
@@ -205,5 +253,5 @@ app.http('wishlist', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'wishlist/{id?}/{action?}',
-  handler: wishlistHandler,
+  handler: wishlistHandlerWrapper,
 });

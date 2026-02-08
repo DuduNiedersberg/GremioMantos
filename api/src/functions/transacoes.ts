@@ -2,16 +2,24 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
-import { transacaoSchema, safeParseJson, clampPagination } from '../lib/utils';
+import { transacaoSchema, safeParseJson, clampPagination, JWTPayload } from '../lib/utils';
 import { Transacao } from '../lib/types';
+import { protectedRoute } from '../middleware/auth';
 
-async function transacoesHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function transacoesHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
 
   // Handle preflight
   if (request.method === 'OPTIONS') {
     return handlePreflight(origin);
   }
+
+  // Delegate to protected handler
+  return protectedRoute(transacoesHandler)(request, context);
+}
+
+async function transacoesHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
 
   try {
     const method = request.method;
@@ -28,12 +36,18 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       let whereClause = 'WHERE 1=1';
       const params: Record<string, any> = {};
 
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND t.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       if (tipo) {
         whereClause += ' AND tipo_transacao = @tipo';
         params.tipo = tipo;
       }
 
-      const countQuery = `SELECT COUNT(*) as total FROM transacoes ${whereClause}`;
+      const countQuery = `SELECT COUNT(*) as total FROM transacoes t ${whereClause}`;
       const countResult = await executeQuery<{ total: number }>(countQuery, params);
       const total = countResult.recordset[0].total;
 
@@ -60,14 +74,23 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
 
     // GET /api/transacoes/{id} - Get single transaction
     if (method === 'GET' && id) {
+      let whereClause = 'WHERE t.id = @id';
+      const params: Record<string, any> = { id };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND t.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       const query = `
         SELECT t.*, i.nome as item_nome, c.nome as cliente_nome
         FROM transacoes t
         LEFT JOIN itens i ON t.item_id = i.id
         LEFT JOIN clientes c ON t.cliente_id = c.id
-        WHERE t.id = @id
+        ${whereClause}
       `;
-      const result = await executeQuery<Transacao>(query, { id });
+      const result = await executeQuery<Transacao>(query, params);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Transação não encontrada' }, 404, origin);
@@ -82,17 +105,20 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       const validated = transacaoSchema.parse(body);
 
       const dataTransacao = validated.data_transacao || new Date().toISOString().split('T')[0];
+      
+      // Determine tenant_id: use from body if platform_admin, otherwise use user's tenant
+      const tenantId = user.tipo === 'platform_admin' && validated.tenant_id ? validated.tenant_id : user.tenantId;
 
       // Start transaction
       const insertQuery = `
         INSERT INTO transacoes (
           tipo_transacao, item_id, cliente_id, valor, data_transacao,
-          forma_pagamento, observacoes
+          observacoes, tenant_id, status
         )
         OUTPUT INSERTED.*
         VALUES (
           @tipo_transacao, @item_id, @cliente_id, @valor, @data_transacao,
-          @forma_pagamento, @observacoes
+          @observacoes, @tenant_id, @status
         )
       `;
 
@@ -102,8 +128,9 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
         cliente_id: validated.cliente_id,
         valor: validated.valor,
         data_transacao: dataTransacao,
-        forma_pagamento: validated.forma_pagamento,
         observacoes: validated.observacoes,
+        tenant_id: tenantId,
+        status: validated.status || 'concluida',
       });
 
       // If this is a sale, update the item status
@@ -133,16 +160,16 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       
       // Manual validation for partial updates (can't use partial() with refined schemas)
       type PartialTransacao = Partial<{
-        tipo_transacao: 'compra' | 'venda' | 'troca';
+        tipo_transacao: 'venda' | 'compra' | 'troca';
         item_id: number;
         cliente_id: number;
         valor: number;
         data_transacao: string;
-        forma_pagamento: string;
         observacoes: string;
+        status: 'pendente' | 'concluida' | 'cancelada' | 'estornada';
       }>;
       
-      const allowedFields = ['tipo_transacao', 'item_id', 'cliente_id', 'valor', 'data_transacao', 'forma_pagamento', 'observacoes'];
+      const allowedFields = ['tipo_transacao', 'item_id', 'cliente_id', 'valor', 'data_transacao', 'observacoes', 'status'];
       const validated: PartialTransacao = {};
       
       for (const key of allowedFields) {
@@ -151,9 +178,18 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
         }
       }
 
-      // Get the existing transaction to check tipo_transacao
-      const existingQuery = 'SELECT * FROM transacoes WHERE id = @id';
-      const existingResult = await executeQuery<Transacao>(existingQuery, { id });
+      // Get the existing transaction to check tipo_transacao and tenant
+      let whereClause = 'WHERE id = @id';
+      const params: Record<string, any> = { id };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
+      const existingQuery = `SELECT * FROM transacoes ${whereClause}`;
+      const existingResult = await executeQuery<Transacao>(existingQuery, params);
 
       if (existingResult.recordset.length === 0) {
         return successResponse({ error: 'Transação não encontrada' }, 404, origin);
@@ -169,12 +205,12 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       if (setClauses) {
         const updateQuery = `
           UPDATE transacoes
-          SET ${setClauses}, atualizado_em = GETDATE()
+          SET ${setClauses}
           OUTPUT INSERTED.*
-          WHERE id = @id
+          ${whereClause}
         `;
 
-        const result = await executeQuery<Transacao>(updateQuery, { ...validated, id });
+        const result = await executeQuery<Transacao>(updateQuery, { ...validated, ...params });
 
         // If this is a sale and valor changed, update item
         if (existingTransaction.tipo_transacao === 'venda' && validated.valor !== undefined) {
@@ -198,9 +234,18 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
 
     // DELETE /api/transacoes/{id} - Delete transaction
     if (method === 'DELETE' && id) {
-      // Get the transaction before deleting
-      const getQuery = 'SELECT * FROM transacoes WHERE id = @id';
-      const getResult = await executeQuery<Transacao>(getQuery, { id });
+      // Get the transaction before deleting with tenant check
+      let whereClause = 'WHERE id = @id';
+      const params: Record<string, any> = { id };
+
+      // Tenant isolation
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
+      const getQuery = `SELECT * FROM transacoes ${whereClause}`;
+      const getResult = await executeQuery<Transacao>(getQuery, params);
 
       if (getResult.recordset.length === 0) {
         return successResponse({ error: 'Transação não encontrada' }, 404, origin);
@@ -209,8 +254,8 @@ async function transacoesHandler(request: HttpRequest, context: InvocationContex
       const transaction = getResult.recordset[0];
 
       // Delete the transaction
-      const deleteQuery = 'DELETE FROM transacoes WHERE id = @id';
-      await executeQuery(deleteQuery, { id });
+      const deleteQuery = `DELETE FROM transacoes ${whereClause}`;
+      await executeQuery(deleteQuery, params);
 
       // If this was a sale, check if there are other sales for this item
       if (transaction.tipo_transacao === 'venda') {
@@ -249,5 +294,5 @@ app.http('transacoes', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'transacoes/{id?}',
-  handler: transacoesHandler,
+  handler: transacoesHandlerWrapper,
 });

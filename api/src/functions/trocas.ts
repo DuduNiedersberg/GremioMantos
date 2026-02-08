@@ -4,14 +4,10 @@ import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { trocaSchema, trocaUpdateSchema, safeParseJson, clampPagination } from '../lib/utils';
 import { Troca } from '../lib/types';
+import { protectedRoute, JWTPayload } from '../middleware/auth';
 
-async function trocasHandler(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function trocasHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
-
-  // Handle preflight
-  if (request.method === 'OPTIONS') {
-    return handlePreflight(origin);
-  }
 
   try {
     const method = request.method;
@@ -21,8 +17,11 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
     // POST /api/trocas/{id}/cancelar - Cancel a trade
     if (method === 'POST' && id && action === 'cancelar') {
       // Get the trade
-      const getQuery = 'SELECT * FROM trocas WHERE id = @id';
-      const getResult = await executeQuery<Troca>(getQuery, { id });
+      const getQuery = user.tipo === 'platform_admin' 
+        ? 'SELECT * FROM trocas WHERE id = @id'
+        : 'SELECT * FROM trocas WHERE id = @id AND tenant_id = @tenant_id';
+      const getParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const getResult = await executeQuery<Troca>(getQuery, getParams);
 
       if (getResult.recordset.length === 0) {
         return successResponse({ error: 'Troca não encontrada' }, 404, origin);
@@ -35,13 +34,17 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       }
 
       // Cancel the trade
-      const cancelQuery = `
-        UPDATE trocas
-        SET status = 'cancelada', cancelada_em = GETDATE()
-        OUTPUT INSERTED.*
-        WHERE id = @id
-      `;
-      const cancelResult = await executeQuery<Troca>(cancelQuery, { id });
+      const cancelQuery = user.tipo === 'platform_admin'
+        ? `UPDATE trocas
+           SET status = 'cancelada', cancelada_em = GETDATE()
+           OUTPUT INSERTED.*
+           WHERE id = @id`
+        : `UPDATE trocas
+           SET status = 'cancelada', cancelada_em = GETDATE()
+           OUTPUT INSERTED.*
+           WHERE id = @id AND tenant_id = @tenant_id`;
+      const cancelParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const cancelResult = await executeQuery<Troca>(cancelQuery, cancelParams);
 
       // Revert item statuses to consistent state
       // For canceled trades, both items should return to 'estoque' state
@@ -79,6 +82,11 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       let whereClause = 'WHERE 1=1';
       const params: Record<string, any> = {};
 
+      if (user.tipo !== 'platform_admin') {
+        whereClause += ' AND t.tenant_id = @tenant_id';
+        params.tenant_id = user.tenantId;
+      }
+
       if (status) {
         whereClause += ' AND t.status = @status';
         params.status = status;
@@ -113,16 +121,23 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
     // GET /api/trocas/{id} - Get single trade
     if (method === 'GET' && id) {
-      const query = `
-        SELECT t.*, 
-          id.nome as item_dado_nome,
-          ir.nome as item_recebido_nome
-        FROM trocas t
-        LEFT JOIN itens id ON t.item_dado_id = id.id
-        LEFT JOIN itens ir ON t.item_recebido_id = ir.id
-        WHERE t.id = @id
-      `;
-      const result = await executeQuery(query, { id });
+      const query = user.tipo === 'platform_admin'
+        ? `SELECT t.*, 
+             id.nome as item_dado_nome,
+             ir.nome as item_recebido_nome
+           FROM trocas t
+           LEFT JOIN itens id ON t.item_dado_id = id.id
+           LEFT JOIN itens ir ON t.item_recebido_id = ir.id
+           WHERE t.id = @id`
+        : `SELECT t.*, 
+             id.nome as item_dado_nome,
+             ir.nome as item_recebido_nome
+           FROM trocas t
+           LEFT JOIN itens id ON t.item_dado_id = id.id
+           LEFT JOIN itens ir ON t.item_recebido_id = ir.id
+           WHERE t.id = @id AND t.tenant_id = @tenant_id`;
+      const queryParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const result = await executeQuery(query, queryParams);
 
       if (result.recordset.length === 0) {
         return successResponse({ error: 'Troca não encontrada' }, 404, origin);
@@ -197,15 +212,16 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       }
 
       // Inserir na tabela trocas
+      const tenantId = user.tipo === 'platform_admin' && validated.tenant_id ? validated.tenant_id : user.tenantId;
       const query = `
         INSERT INTO trocas (
           item_dado_id, item_recebido_id, valor_adicional, quem_pagou,
-          data_troca, observacoes, status
+          data_troca, observacoes, status, tenant_id
         )
         OUTPUT INSERTED.*
         VALUES (
           @item_dado_id, @item_recebido_id, @valor_adicional, @quem_pagou,
-          @data_troca, @observacoes, 'ativa'
+          @data_troca, @observacoes, 'ativa', @tenant_id
         )
       `;
 
@@ -216,6 +232,7 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         quem_pagou: validated.quem_pagou,
         data_troca: datatroca,
         observacoes: validated.observacoes,
+        tenant_id: tenantId,
       });
 
       return successResponse({
@@ -231,8 +248,11 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
 
       // If status is being set to 'cancelada', use cancel logic
       if (validated.status === 'cancelada') {
-        const getQuery = 'SELECT * FROM trocas WHERE id = @id';
-        const getResult = await executeQuery<Troca>(getQuery, { id });
+        const getQuery = user.tipo === 'platform_admin'
+          ? 'SELECT * FROM trocas WHERE id = @id'
+          : 'SELECT * FROM trocas WHERE id = @id AND tenant_id = @tenant_id';
+        const getParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+        const getResult = await executeQuery<Troca>(getQuery, getParams);
 
         if (getResult.recordset.length === 0) {
           return successResponse({ error: 'Troca não encontrada' }, 404, origin);
@@ -241,13 +261,17 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         const trade = getResult.recordset[0];
 
         // Cancel the trade
-        const cancelQuery = `
-          UPDATE trocas
-          SET status = 'cancelada', cancelada_em = GETDATE()
-          OUTPUT INSERTED.*
-          WHERE id = @id
-        `;
-        const cancelResult = await executeQuery<Troca>(cancelQuery, { id });
+        const cancelQuery = user.tipo === 'platform_admin'
+          ? `UPDATE trocas
+             SET status = 'cancelada', cancelada_em = GETDATE()
+             OUTPUT INSERTED.*
+             WHERE id = @id`
+          : `UPDATE trocas
+             SET status = 'cancelada', cancelada_em = GETDATE()
+             OUTPUT INSERTED.*
+             WHERE id = @id AND tenant_id = @tenant_id`;
+        const cancelParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+        const cancelResult = await executeQuery<Troca>(cancelQuery, cancelParams);
 
         // Revert item statuses
         await executeQuery(`
@@ -277,14 +301,20 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
         .join(', ');
 
       if (setClauses) {
+        const whereClause = user.tipo === 'platform_admin' 
+          ? 'WHERE id = @id'
+          : 'WHERE id = @id AND tenant_id = @tenant_id';
         const query = `
           UPDATE trocas 
           SET ${setClauses}
           OUTPUT INSERTED.*
-          WHERE id = @id
+          ${whereClause}
         `;
 
-        const result = await executeQuery<Troca>(query, { ...validated, id });
+        const updateParams = user.tipo === 'platform_admin' 
+          ? { ...validated, id }
+          : { ...validated, id, tenant_id: user.tenantId };
+        const result = await executeQuery<Troca>(query, updateParams);
 
         if (result.recordset.length === 0) {
           return successResponse({ error: 'Troca não encontrada' }, 404, origin);
@@ -294,8 +324,11 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
       }
 
       // No fields to update
-      const getQuery = 'SELECT * FROM trocas WHERE id = @id';
-      const getResult = await executeQuery<Troca>(getQuery, { id });
+      const getQuery = user.tipo === 'platform_admin'
+        ? 'SELECT * FROM trocas WHERE id = @id'
+        : 'SELECT * FROM trocas WHERE id = @id AND tenant_id = @tenant_id';
+      const getParams = user.tipo === 'platform_admin' ? { id } : { id, tenant_id: user.tenantId };
+      const getResult = await executeQuery<Troca>(getQuery, getParams);
       
       if (getResult.recordset.length === 0) {
         return successResponse({ error: 'Troca não encontrada' }, 404, origin);
@@ -318,9 +351,19 @@ async function trocasHandler(request: HttpRequest, context: InvocationContext): 
   }
 }
 
+async function trocasHandlerWrapper(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const origin = request.headers.get('origin') || undefined;
+  
+  if (request.method === 'OPTIONS') {
+    return handlePreflight(origin);
+  }
+  
+  return protectedRoute(trocasHandler)(request, context);
+}
+
 app.http('trocas', {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'trocas/{id?}/{action?}',
-  handler: trocasHandler,
+  handler: trocasHandlerWrapper,
 });
