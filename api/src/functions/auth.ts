@@ -8,17 +8,7 @@ import {
   generateToken,
   verifyToken
 } from '../lib/utils'
-
-const config: sql.config = {
-  server: process.env.DB_SERVER || '',
-  database: process.env.DB_NAME || '',
-  user: process.env.DB_USER || '',
-  password: process.env.DB_PASSWORD || '',
-  options: {
-    encrypt: true,
-    trustServerCertificate: false
-  }
-}
+import { getConnection } from '../lib/database'
 
 // ============================================================================
 // POST /api/auth/register — Registrar novo usuário
@@ -36,7 +26,7 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
     }
 
     const data = validation.data
-    const pool = await sql.connect(config)
+    const pool = await getConnection()
 
     // Verificar se email já existe
     const existing = await pool
@@ -116,7 +106,7 @@ async function login(request: HttpRequest, context: InvocationContext): Promise<
     }
 
     const { email, senha } = validation.data
-    const pool = await sql.connect(config)
+    const pool = await getConnection()
 
     const result = await pool
       .request()
@@ -190,7 +180,7 @@ async function me(request: HttpRequest, context: InvocationContext): Promise<Htt
       return { status: 401, jsonBody: { error: 'Token inválido ou expirado' } }
     }
 
-    const pool = await sql.connect(config)
+    const pool = await getConnection()
     const result = await pool
       .request()
       .input('id', sql.Int, payload.userId)
