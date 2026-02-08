@@ -9,7 +9,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
 
   try {
     const isPlatformAdmin = user.tipo === 'platform_admin';
-    const tenantFilter = isPlatformAdmin ? '' : `WHERE tenant_id = '${user.tenantId}'`;
+    const tenantFilter = isPlatformAdmin ? '' : `WHERE tenant_id = @tenant_id`;
     
     // Calculate metrics from direct queries on itens table
     const metricsQuery = `
@@ -24,7 +24,7 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
       FROM dbo.itens
       ${tenantFilter}
     `;
-    const metricsResult = await executeQuery(metricsQuery);
+    const metricsResult = await executeQuery(metricsQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
     
     const viewData = metricsResult.recordset[0];
 
@@ -74,19 +74,19 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
     const recentQuery = `
       SELECT TOP 5 id, nome, ano, marca, valor_compra, data_aquisicao
       FROM dbo.itens
-      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
+      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
       ORDER BY data_aquisicao DESC
     `;
-    const recentResult = await executeQuery(recentQuery);
+    const recentResult = await executeQuery(recentQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
 
     // Top value items from itens table
     const topValueQuery = `
       SELECT TOP 5 id, nome, ano, jogador, valor_compra
       FROM dbo.itens
-      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
+      WHERE situacao = 'disponivel' ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
       ORDER BY valor_compra DESC
     `;
-    const topValueResult = await executeQuery(topValueQuery);
+    const topValueResult = await executeQuery(topValueQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
 
     // Sales by month from itens table
     const salesByMonthQuery = `
@@ -96,11 +96,11 @@ async function dashboardHandler(request: HttpRequest, context: InvocationContext
         SUM(COALESCE(valor_venda, 0)) as total_vendas,
         SUM(COALESCE(valor_venda, 0) - COALESCE(valor_compra, 0)) as total_lucro
       FROM dbo.itens
-      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${isPlatformAdmin ? '' : `AND tenant_id = '${user.tenantId}'`}
+      WHERE situacao = 'vendida' AND destino = 'venda' AND data_saida IS NOT NULL ${isPlatformAdmin ? '' : `AND tenant_id = @tenant_id`}
       GROUP BY FORMAT(CAST(data_saida AS DATE), 'yyyy-MM')
       ORDER BY mes DESC
     `;
-    const salesByMonthResult = await executeQuery(salesByMonthQuery);
+    const salesByMonthResult = await executeQuery(salesByMonthQuery, isPlatformAdmin ? undefined : { tenant_id: user.tenantId });
 
     return successResponse({
       metrics,
