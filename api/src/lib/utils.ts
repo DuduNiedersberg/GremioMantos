@@ -1,4 +1,57 @@
 import { z } from 'zod';
+import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
+
+// ============================================================================
+// AUTHENTICATION & SECURITY
+// ============================================================================
+
+const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key-change-in-production"
+const JWT_EXPIRES_IN = "7d"
+const BCRYPT_ROUNDS = 12
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS)
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash)
+}
+
+export interface JWTPayload {
+  userId: number
+  email: string
+  tipo: UsuarioTipo
+  tenantId: number | null
+  nome: string
+}
+
+export function generateToken(payload: JWTPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+}
+
+export function verifyToken(token: string): JWTPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JWTPayload
+  } catch {
+    return null
+  }
+}
+
+export function getTenantIdFromRequest(authHeader?: string, xTenantId?: string): number {
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7)
+    const payload = verifyToken(token)
+    if (payload?.tenantId) return payload.tenantId
+  }
+  
+  if (xTenantId) {
+    const parsed = parseInt(xTenantId)
+    if (!isNaN(parsed)) return parsed
+  }
+  
+  return 1 // Tenant padrão
+}
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -144,6 +197,100 @@ export const historicoPrecoSchema = z.object({
   data_registro: z.string().optional(),
   observacoes: z.string().optional(),
 });
+
+// --- MULTITENANCY ---
+export const PlanoTipoEnum = z.enum(['free', 'starter', 'pro', 'custom'])
+export type PlanoTipo = z.infer<typeof PlanoTipoEnum>
+
+export const UsuarioTipoEnum = z.enum([
+  'platform_admin',
+  'tenant_admin',
+  'tenant_member',
+  'colecionador'
+])
+export type UsuarioTipo = z.infer<typeof UsuarioTipoEnum>
+
+export const AuthProviderEnum = z.enum(['local', 'google', 'facebook', 'instagram'])
+export type AuthProvider = z.infer<typeof AuthProviderEnum>
+
+export const ProvaOriginalidadeEnum = z.enum([
+  'etiqueta',
+  'nota_fiscal',
+  'certificado',
+  'aspecto_visual',
+  'nenhuma'
+])
+export type ProvaOriginalidade = z.infer<typeof ProvaOriginalidadeEnum>
+
+export const TransacaoStatusEnum = z.enum(['pendente', 'concluida', 'cancelada', 'estornada'])
+export type TransacaoStatus = z.infer<typeof TransacaoStatusEnum>
+
+export const PedidoStatusEnum = z.enum([
+  'pendente',
+  'pago',
+  'enviado',
+  'entregue',
+  'cancelado',
+  'estornado'
+])
+export type PedidoStatus = z.infer<typeof PedidoStatusEnum>
+
+export const OfertaStatusEnum = z.enum(['pendente', 'aceita', 'recusada', 'expirada'])
+export type OfertaStatus = z.infer<typeof OfertaStatusEnum>
+
+export const ConexaoStatusEnum = z.enum(['pendente', 'aceita', 'bloqueada'])
+export type ConexaoStatus = z.infer<typeof ConexaoStatusEnum>
+
+export const EnderecoTipoEnum = z.enum(['entrega', 'cobranca', 'loja'])
+export type EnderecoTipo = z.infer<typeof EnderecoTipoEnum>
+
+export const ClienteTipoEnum = z.enum(['usuario', 'externo', 'parceiro'])
+export type ClienteTipo = z.infer<typeof ClienteTipoEnum>
+
+export const NotificacaoTipoEnum = z.enum([
+  'wishlist_match_exato',
+  'wishlist_match_parcial',
+  'oferta_recebida',
+  'oferta_aceita',
+  'mensagem_recebida',
+  'pedido_novo',
+  'pedido_atualizado',
+  'pedido_enviado',
+  'pedido_entregue',
+  'sistema',
+  'conexao_solicitada',
+  'conexao_aceita'
+])
+export type NotificacaoTipo = z.infer<typeof NotificacaoTipoEnum>
+
+export const BillingTipoEnum = z.enum(['comissao_venda', 'assinatura', 'servico', 'reembolso'])
+export type BillingTipo = z.infer<typeof BillingTipoEnum>
+
+// --- VALIDADORES BASE ---
+export const emailSchema = z.string().email('Email inválido')
+export const telefoneSchema = z.string().regex(/^\d{10,11}$/, 'Telefone deve ter 10 ou 11 dígitos')
+export const senhaSchema = z.string()
+  .min(8, 'Senha deve ter no mínimo 8 caracteres')
+  .regex(/[A-Z]/, 'Deve ter ao menos 1 letra maiúscula')
+  .regex(/[a-z]/, 'Deve ter ao menos 1 letra minúscula')
+  .regex(/[0-9]/, 'Deve ter ao menos 1 número')
+
+// --- USUARIOS ---
+export const usuarioCreateSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  email: emailSchema,
+  telefone: telefoneSchema.optional(),
+  senha: senhaSchema.optional(),
+  provider: AuthProviderEnum.default('local'),
+  provider_id: z.string().optional(),
+  tipo: UsuarioTipoEnum.default('colecionador'),
+  tenant_id: z.number().int().positive().nullable().optional()
+})
+
+export const usuarioLoginSchema = z.object({
+  email: emailSchema,
+  senha: z.string().min(1, 'Senha é obrigatória')
+})
 
 // =============================================================================
 // UTILITY FUNCTIONS
