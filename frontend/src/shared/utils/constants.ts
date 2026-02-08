@@ -80,10 +80,9 @@ export const SITUACOES = [
   { value: 'baixada_colecao', label: 'Baixada (Coleção)' },
 ] as const;
 export const TIPOS_CLIENTE = [
-  { value: 'cliente', label: 'Cliente/Comprador' },
-  { value: 'fornecedor', label: 'Fornecedor/Vendedor' },
-  { value: 'colecionador', label: 'Colecionador' },
-  { value: 'ambos', label: 'Ambos/Parceiro' },
+  { value: 'comprador', label: 'Comprador' },
+  { value: 'vendedor', label: 'Vendedor' },
+  { value: 'ambos', label: 'Ambos' },
 ] as const;
 
 export const APP_NAME = 'Bolicho do Grêmio';

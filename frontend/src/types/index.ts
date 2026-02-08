@@ -34,8 +34,8 @@ export interface Item {
 export interface Lote {
   id: number;
   nome: string;
-  quantidade_total?: number;
-  quantidade_disponivel?: number;
+  quantidade_total: number;
+  quantidade_disponivel: number;
   valor_unitario_compra?: number;
   data_aquisicao?: string;
   observacoes?: string;
@@ -51,7 +51,7 @@ export interface Cliente {
   telefone?: string;
   instagram?: string;
   cidade?: string;
-  tipo?: 'cliente' | 'fornecedor' | 'colecionador' | 'ambos';
+  tipo?: 'vendedor' | 'comprador' | 'ambos';
   observacoes?: string;
   criado_em: string;
   atualizado_em?: string;
@@ -65,11 +65,11 @@ export interface Transacao {
   cliente_id?: number;
   valor: number;
   data_transacao: string;
-  forma_pagamento?: string;
   observacoes?: string;
   criado_em: string;
   item_nome?: string;
   cliente_nome?: string;
+  status?: 'pendente' | 'concluida' | 'cancelada' | 'estornada';
 }
 
 export interface Venda {
@@ -80,7 +80,6 @@ export interface Venda {
   valor_compra?: number;
   lucro?: number;
   data_venda: string;
-  forma_pagamento?: string;
   observacoes?: string;
   criado_em: string;
   item_nome?: string;
