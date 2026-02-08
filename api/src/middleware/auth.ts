@@ -45,10 +45,8 @@ export function protectedRoute(
     const authError = requireAuth(request)
     if (authError) return authError
 
-    const user = extractUser(request)
-    if (!user) {
-      return { status: 401, jsonBody: { error: 'Usuário não autenticado' } }
-    }
+    // At this point, token is valid, so extractUser will return the user
+    const user = extractUser(request)!
 
     return handler(request, context, user)
   }
