@@ -139,6 +139,9 @@ export const suspendTenant = (id: number, data: { suspenso: boolean; motivo_susp
 // Admin - Planos
 export const getAdminPlanos = () => api.get('/admin/planos');
 export const getAdminPlano = (id: number) => api.get(`/admin/planos/${id}`);
+export const createAdminPlano = (data: any) => api.post('/admin/planos', data);
+export const updateAdminPlano = (id: number, data: any) => api.put(`/admin/planos/${id}`, data);
+export const togglePlanoAtivo = (id: number) => api.patch(`/admin/planos/${id}/toggle-active`);
 
 // Admin - Metricas
 export const getAdminMetricas = () => api.get('/admin/metricas');

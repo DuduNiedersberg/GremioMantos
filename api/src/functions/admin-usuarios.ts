@@ -3,7 +3,7 @@ import { executeQuery } from '../lib/database';
 import { handleError, successResponse } from '../middleware/errorHandler';
 import { handlePreflight } from '../lib/cors';
 import { protectedRoute, JWTPayload, requireRole } from '../middleware/auth';
-import { safeParseJson, clampPagination, hashPassword } from '../lib/utils';
+import { safeParseJson, clampPagination, hashPassword, senhaSchema } from '../lib/utils';
 
 async function adminUsuariosHandler(request: HttpRequest, context: InvocationContext, user: JWTPayload): Promise<HttpResponseInit> {
   const origin = request.headers.get('origin') || undefined;
@@ -148,6 +148,15 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
         }, 409, origin);
       }
 
+      // Validate password
+      const senhaValidation = senhaSchema.safeParse(body.senha);
+      if (!senhaValidation.success) {
+        return successResponse({
+          error: 'Senha inválida',
+          message: senhaValidation.error.errors[0].message,
+        }, 400, origin);
+      }
+
       // Hash password
       const senhaHash = await hashPassword(body.senha);
 
@@ -266,6 +275,15 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
         return successResponse({
           error: 'Campo obrigatório faltando',
           message: 'nova_senha é obrigatória',
+        }, 400, origin);
+      }
+
+      // Validate new password
+      const senhaValidation = senhaSchema.safeParse(body.nova_senha);
+      if (!senhaValidation.success) {
+        return successResponse({
+          error: 'Senha inválida',
+          message: senhaValidation.error.errors[0].message,
         }, 400, origin);
       }
 
