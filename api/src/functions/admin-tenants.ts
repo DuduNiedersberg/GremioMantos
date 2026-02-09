@@ -41,7 +41,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       }
 
       if (planoFilter) {
-        whereClause += ' AND t.plano = @plano';
+        whereClause += ' AND p.codigo = @plano';
         params.plano = planoFilter;
       }
 
@@ -100,19 +100,21 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
 
       // Get recent activity
       const activityQuery = `
-        SELECT TOP 10 
-          'item' as tipo,
-          i.nome as descricao,
-          i.criado_em as data
-        FROM itens i
-        WHERE i.tenant_id = @id
-        UNION ALL
-        SELECT TOP 10
-          'transacao' as tipo,
-          t.tipo_transacao as descricao,
-          t.criado_em as data
-        FROM transacoes t
-        WHERE t.tenant_id = @id
+        SELECT TOP 10 * FROM (
+          SELECT 
+            'item' as tipo,
+            i.nome as descricao,
+            i.criado_em as data
+          FROM itens i
+          WHERE i.tenant_id = @id
+          UNION ALL
+          SELECT 
+            'transacao' as tipo,
+            t.tipo_transacao as descricao,
+            t.criado_em as data
+          FROM transacoes t
+          WHERE t.tenant_id = @id
+        ) combined
         ORDER BY data DESC
       `;
 

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './shared/components/Layout';
+import AdminRoute from './shared/components/AdminRoute';
 import LoginPage from './features/auth/LoginPage';
 import Dashboard from './features/dashboard/Dashboard';
 import ItemList from './features/itens/ItemList';
@@ -16,6 +17,7 @@ import ClientesList from './features/clientes/ClientesList';
 import UsuariosList from './features/admin/UsuariosList';
 import TenantsList from './features/admin/TenantsList';
 import PlanosList from './features/admin/PlanosList';
+import AdminDashboard from './features/admin/AdminDashboard';
 
 // Loading skeleton component
 const LoadingSkeleton = () => (
@@ -79,10 +81,13 @@ function App() {
             {/* Customers */}
             <Route path="clientes" element={<ClientesList />} />
             
-            {/* Admin */}
-            <Route path="admin/usuarios" element={<UsuariosList />} />
-            <Route path="admin/tenants" element={<TenantsList />} />
-            <Route path="admin/planos" element={<PlanosList />} />
+            {/* Admin - any admin (platform_admin or tenant_admin) */}
+            <Route path="admin/usuarios" element={<AdminRoute><UsuariosList /></AdminRoute>} />
+            
+            {/* Admin - platform_admin only */}
+            <Route path="admin/metricas" element={<AdminRoute platformOnly><AdminDashboard /></AdminRoute>} />
+            <Route path="admin/tenants" element={<AdminRoute platformOnly><TenantsList /></AdminRoute>} />
+            <Route path="admin/planos" element={<AdminRoute platformOnly><PlanosList /></AdminRoute>} />
             
             {/* 404 */}
             <Route path="*" element={<Navigate to="/" replace />} />
