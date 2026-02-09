@@ -156,7 +156,6 @@ export default function UsuariosList() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Nome ou email..."
-              icon={Search}
             />
           </div>
           <div>
@@ -271,7 +270,7 @@ export default function UsuariosList() {
       {total > 30 && (
         <div className="flex justify-center gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             disabled={page === 1}
             onClick={() => setPage(page - 1)}
           >
@@ -281,7 +280,7 @@ export default function UsuariosList() {
             Página {page} de {Math.ceil(total / 30)}
           </span>
           <Button
-            variant="outline"
+            variant="secondary"
             disabled={page >= Math.ceil(total / 30)}
             onClick={() => setPage(page + 1)}
           >
@@ -434,7 +433,7 @@ function UsuarioFormModal({ title, usuario, onClose, onSubmit, tenants, isPlatfo
             </Select>
           )}
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancelar
             </Button>
             <Button type="submit">Salvar</Button>
@@ -474,7 +473,7 @@ function ResetPasswordModal({ usuario, onClose, onSubmit }: any) {
             required
           />
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancelar
             </Button>
             <Button type="submit">Redefinir</Button>

@@ -394,7 +394,7 @@ function PlanoFormModal({ title, plano, onClose, onSubmit }: PlanoFormModalProps
           </div>
           
           <div className="flex gap-2 justify-end pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancelar
             </Button>
             <Button type="submit">Salvar</Button>

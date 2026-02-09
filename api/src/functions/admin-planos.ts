@@ -164,7 +164,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
     }
 
     // PATCH /api/admin/planos/:id/toggle-active - Toggle active status
-    if (method === 'PATCH' && id && request.params.action === 'toggle-active') {
+    if (method === 'PATCH' && id && action === 'toggle-active') {
       const query = `
         UPDATE planos
         SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END,
