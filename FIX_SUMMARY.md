@@ -39,7 +39,7 @@ Added CORS headers to all authentication/authorization error responses by:
 
 ### Before Fix
 ```bash
-curl -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <token>"
 # Result: 404 Not Found (or network error)
 ```
@@ -47,17 +47,17 @@ curl -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
 ### After Fix
 ```bash
 # With invalid token
-curl -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer invalid"
 # Result: 401 Unauthorized + CORS headers
 
 # With valid token but wrong role (e.g., tenant_member)
-curl -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <tenant-member-token>"
 # Result: 403 Forbidden + CORS headers
 
 # With valid platform_admin token
-curl -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <platform-admin-token>"
 # Result: 200 OK + data + CORS headers
 ```
@@ -81,7 +81,7 @@ Wait 30-60 seconds after deployment for Azure Functions to fully load.
 
 ### 4. Verify CORS Headers
 ```bash
-curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/admin/metricas
+curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/platform/metricas
 # Should see CORS headers in response
 ```
 
@@ -102,10 +102,10 @@ curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/admin/metricas
 ## Impact
 
 ### What's Fixed
-✅ `/api/admin/metricas` - Now returns proper status codes
-✅ `/api/admin/planos` - Now returns proper status codes
-✅ `/api/admin/tenants` - Now returns proper status codes
-✅ `/api/admin/usuarios` - Now returns proper status codes
+✅ `/api/platform/metricas` - Now returns proper status codes
+✅ `/api/platform/planos` - Now returns proper status codes
+✅ `/api/platform/tenants` - Now returns proper status codes
+✅ `/api/platform/usuarios` - Now returns proper status codes
 ✅ All responses include CORS headers
 ✅ Proper error messages visible to clients
 

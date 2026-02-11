@@ -120,29 +120,29 @@ export const addHistoricoPreco = (itemId: number, data: any) => api.post(`/itens
 // QR Code (alias)
 export const getQRCode = (itemId: number) => api.get(`/itens/${itemId}/qrcode`);
 
-// Admin - Usuarios
-export const getAdminUsuarios = (params?: Record<string, any>) => api.get('/admin/usuarios', { params });
-export const getAdminUsuario = (id: number) => api.get(`/admin/usuarios/${id}`);
-export const createAdminUsuario = (data: any) => api.post('/admin/usuarios', data);
-export const updateAdminUsuario = (id: number, data: any) => api.put(`/admin/usuarios/${id}`, data);
-export const toggleUsuarioAtivo = (id: number) => api.patch(`/admin/usuarios/${id}/toggle-active`);
-export const resetUsuarioSenha = (id: number, data: { nova_senha: string }) => api.patch(`/admin/usuarios/${id}/reset-password`, data);
+// Platform - Usuarios
+export const getAdminUsuarios = (params?: Record<string, any>) => api.get('/platform/usuarios', { params });
+export const getAdminUsuario = (id: number) => api.get(`/platform/usuarios/${id}`);
+export const createAdminUsuario = (data: any) => api.post('/platform/usuarios', data);
+export const updateAdminUsuario = (id: number, data: any) => api.put(`/platform/usuarios/${id}`, data);
+export const toggleUsuarioAtivo = (id: number) => api.patch(`/platform/usuarios/${id}/toggle-active`);
+export const resetUsuarioSenha = (id: number, data: { nova_senha: string }) => api.patch(`/platform/usuarios/${id}/reset-password`, data);
 
-// Admin - Tenants
-export const getAdminTenants = (params?: Record<string, any>) => api.get('/admin/tenants', { params });
-export const getAdminTenant = (id: number) => api.get(`/admin/tenants/${id}`);
-export const createAdminTenant = (data: any) => api.post('/admin/tenants', data);
-export const updateAdminTenant = (id: number, data: any) => api.put(`/admin/tenants/${id}`, data);
-export const toggleTenantAtivo = (id: number) => api.patch(`/admin/tenants/${id}/toggle-active`);
-export const suspendTenant = (id: number, data: { suspenso: boolean; motivo_suspensao?: string }) => api.patch(`/admin/tenants/${id}/suspend`, data);
+// Platform - Tenants
+export const getAdminTenants = (params?: Record<string, any>) => api.get('/platform/tenants', { params });
+export const getAdminTenant = (id: number) => api.get(`/platform/tenants/${id}`);
+export const createAdminTenant = (data: any) => api.post('/platform/tenants', data);
+export const updateAdminTenant = (id: number, data: any) => api.put(`/platform/tenants/${id}`, data);
+export const toggleTenantAtivo = (id: number) => api.patch(`/platform/tenants/${id}/toggle-active`);
+export const suspendTenant = (id: number, data: { suspenso: boolean; motivo_suspensao?: string }) => api.patch(`/platform/tenants/${id}/suspend`, data);
 
-// Admin - Planos
-export const getAdminPlanos = () => api.get('/admin/planos');
-export const getAdminPlano = (id: number) => api.get(`/admin/planos/${id}`);
-export const createAdminPlano = (data: any) => api.post('/admin/planos', data);
-export const updateAdminPlano = (id: number, data: any) => api.put(`/admin/planos/${id}`, data);
-export const togglePlanoAtivo = (id: number) => api.patch(`/admin/planos/${id}/toggle-active`);
+// Platform - Planos
+export const getAdminPlanos = () => api.get('/platform/planos');
+export const getAdminPlano = (id: number) => api.get(`/platform/planos/${id}`);
+export const createAdminPlano = (data: any) => api.post('/platform/planos', data);
+export const updateAdminPlano = (id: number, data: any) => api.put(`/platform/planos/${id}`, data);
+export const togglePlanoAtivo = (id: number) => api.patch(`/platform/planos/${id}/toggle-active`);
 
-// Admin - Metricas
-export const getAdminMetricas = () => api.get('/admin/metricas');
+// Platform - Metricas
+export const getAdminMetricas = () => api.get('/platform/metricas');
 

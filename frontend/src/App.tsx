@@ -81,13 +81,13 @@ function App() {
             {/* Customers */}
             <Route path="clientes" element={<ClientesList />} />
             
-            {/* Admin - any admin (platform_admin or tenant_admin) */}
-            <Route path="admin/usuarios" element={<AdminRoute><UsuariosList /></AdminRoute>} />
+            {/* Platform - any admin (platform_admin or tenant_admin) */}
+            <Route path="platform/usuarios" element={<AdminRoute><UsuariosList /></AdminRoute>} />
             
-            {/* Admin - platform_admin only */}
-            <Route path="admin/metricas" element={<AdminRoute platformOnly><AdminDashboard /></AdminRoute>} />
-            <Route path="admin/tenants" element={<AdminRoute platformOnly><TenantsList /></AdminRoute>} />
-            <Route path="admin/planos" element={<AdminRoute platformOnly><PlanosList /></AdminRoute>} />
+            {/* Platform - platform_admin only */}
+            <Route path="platform/metricas" element={<AdminRoute platformOnly><AdminDashboard /></AdminRoute>} />
+            <Route path="platform/tenants" element={<AdminRoute platformOnly><TenantsList /></AdminRoute>} />
+            <Route path="platform/planos" element={<AdminRoute platformOnly><PlanosList /></AdminRoute>} />
             
             {/* 404 */}
             <Route path="*" element={<Navigate to="/" replace />} />

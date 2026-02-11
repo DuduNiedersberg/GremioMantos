@@ -27,10 +27,10 @@ const navItems = [
 ];
 
 const adminNavItems = [
-  { to: '/admin/usuarios', icon: UserCog, label: 'Usuários', requiresPlatformAdmin: false },
-  { to: '/admin/metricas', icon: BarChart3, label: 'Métricas', requiresPlatformAdmin: true },
-  { to: '/admin/tenants', icon: Building2, label: 'Tenants', requiresPlatformAdmin: true },
-  { to: '/admin/planos', icon: CreditCard, label: 'Planos', requiresPlatformAdmin: true },
+  { to: '/platform/usuarios', icon: UserCog, label: 'Usuários', requiresPlatformAdmin: false },
+  { to: '/platform/metricas', icon: BarChart3, label: 'Métricas', requiresPlatformAdmin: true },
+  { to: '/platform/tenants', icon: Building2, label: 'Tenants', requiresPlatformAdmin: true },
+  { to: '/platform/planos', icon: CreditCard, label: 'Planos', requiresPlatformAdmin: true },
 ];
 
 export default function Sidebar() {

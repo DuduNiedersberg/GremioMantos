@@ -14,7 +14,7 @@ async function adminMetricasHandler(request: HttpRequest, context: InvocationCon
 
     const method = request.method;
 
-    // GET /api/admin/metricas - Platform-wide metrics
+    // GET /api/platform/metricas - Platform-wide metrics
     if (method === 'GET') {
       // Tenant metrics
       const tenantsQuery = `
@@ -167,6 +167,6 @@ async function adminMetricasHandlerWrapper(request: HttpRequest, context: Invoca
 app.http('admin-metricas', {
   methods: ['GET', 'OPTIONS'],
   authLevel: 'anonymous',
-  route: 'admin/metricas',
+  route: 'platform/metricas',
   handler: adminMetricasHandlerWrapper,
 });

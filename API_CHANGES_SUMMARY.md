@@ -25,7 +25,7 @@ Production schema has these as NOT NULL:
 
 **Note**: All endpoints now use JWT authentication via `protectedRoute()` middleware. Tenant isolation is enforced on all data endpoints - users can only access data belonging to their tenant (except platform admins).
 
-### `/api/admin/tenants`
+### `/api/platform/tenants`
 ✅ GET - List all tenants (platform admin only)
 ✅ GET /{id} - Get tenant details with recent activity (platform admin only)
 ✅ POST - Create new tenant (platform admin only)
@@ -33,7 +33,7 @@ Production schema has these as NOT NULL:
 ✅ PATCH /{id}/toggle-status - Activate/deactivate tenant (platform admin only)
 ✅ PATCH /{id}/suspend - Suspend/unsuspend tenant (platform admin only)
 
-### `/api/admin/usuarios`
+### `/api/platform/usuarios`
 ✅ GET - List all users (platform/tenant admins, filtered by tenant for tenant admins)
 ✅ GET /{id} - Get user details (platform/tenant admins)
 ✅ POST - Create new user (platform/tenant admins, tenant admin can only create in their tenant)
