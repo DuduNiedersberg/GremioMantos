@@ -18,3 +18,9 @@ import './functions/wishlist';
 import './functions/historico-precos';
 import './functions/qrcode';
 import './functions/dashboard';
+//Import all admin functions to register admin endpoints
+import './admin-usuarios'
+import './admin-tenants'
+import './admin-planos'
+import './admin-metricas'
+
