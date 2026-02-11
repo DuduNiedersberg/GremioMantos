@@ -36,6 +36,7 @@ jobs:
       - name: Install dependencies and build (API)
         working-directory: ${{ env.API_DIR }}
         run: |
+          rm -rf dist
           npm ci
           npm run build
           ls -la dist/
@@ -109,3 +110,4 @@ jobs:
           echo "Testing itens endpoint..."
           curl -s -i "$BASE_URL/api/itens" | head -n 20
            
+
