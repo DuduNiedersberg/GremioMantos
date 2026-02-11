@@ -170,4 +170,3 @@ app.http('admin-metricas', {
   route: 'admin/metricas',
   handler: adminMetricasHandlerWrapper,
 });
-export {} 
