@@ -76,7 +76,7 @@ jobs:
           name: functionapp-package
           path: ${{ env.ZIP_NAME }}
           
-      - name: Debug: verify admin functions in zip
+      - name: Verify admin functions in zip
         run: |
           echo "== dist/index.js (imports) =="
           unzip -p "${{ env.ZIP_NAME }}" dist/index.js | grep -E "admin-(usuarios|tenants|planos|metricas)" || true
@@ -118,5 +118,6 @@ jobs:
           echo "Testing itens endpoint..."
           curl -s -i "$BASE_URL/api/itens" | head -n 20
            
+
 
 
