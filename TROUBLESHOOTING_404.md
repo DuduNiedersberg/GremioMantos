@@ -135,7 +135,7 @@ curl -i http://localhost:7071/api/admin/metricas \
 ### Step 4: Test with Postman/curl
 Test in this order:
 1. OPTIONS request (should return 200/204 with CORS headers)
-2. GET without auth (should return 401, not 404)
+2. GET without auth (should return 401 with CORS headers - before the fix this returned 404)
 3. GET with valid platform_admin JWT (should return 200 with data)
 
 ### Step 5: Compare with Working Function
