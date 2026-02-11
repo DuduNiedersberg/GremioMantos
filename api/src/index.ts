@@ -19,7 +19,6 @@ import './functions/historico-precos';
 import './functions/qrcode';
 import './functions/dashboard';
 import './functions/update-password';
-// Import admin functions
 import './functions/admin-usuarios';
 import './functions/admin-tenants';
 import './functions/admin-planos';
