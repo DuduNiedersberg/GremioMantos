@@ -10,7 +10,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
 
   try {
     // Only platform_admin can access plans management
-    const roleError = requireRole('platform_admin')(user);
+    const roleError = requireRole('platform_admin')(user, origin);
     if (roleError) return roleError;
 
     const method = request.method;

@@ -10,7 +10,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
 
   try {
     // Only platform_admin can access tenant management
-    const roleError = requireRole('platform_admin')(user);
+    const roleError = requireRole('platform_admin')(user, origin);
     if (roleError) return roleError;
 
     const method = request.method;

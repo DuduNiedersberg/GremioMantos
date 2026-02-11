@@ -10,7 +10,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
 
   try {
     // Role check: platform_admin or tenant_admin
-    const roleError = requireRole('platform_admin', 'tenant_admin')(user);
+    const roleError = requireRole('platform_admin', 'tenant_admin')(user, origin);
     if (roleError) return roleError;
 
     const method = request.method;
