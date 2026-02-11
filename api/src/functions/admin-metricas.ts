@@ -9,7 +9,7 @@ async function adminMetricasHandler(request: HttpRequest, context: InvocationCon
 
   try {
     // Only platform_admin can access platform metrics
-    const roleError = requireRole('platform_admin')(user);
+    const roleError = requireRole('platform_admin')(user, origin);
     if (roleError) return roleError;
 
     const method = request.method;
