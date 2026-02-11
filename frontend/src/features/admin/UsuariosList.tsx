@@ -61,8 +61,11 @@ export default function UsuariosList() {
       if (tenantFilter) params.tenant_id = tenantFilter;
 
       const response = await getAdminUsuarios(params);
-      setUsuarios(response.data.data);
-      setTotal(response.data.total);
+      // Handle both { data: [...] } and { success: true, data: { data: [...], total: ... } } shapes
+      const payload = response.data?.data ?? response.data;
+      const usuariosArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setUsuarios(usuariosArray);
+      setTotal(response.data?.total ?? payload?.total ?? 0);
     } catch (err: any) {
       error(err.response?.data?.message || 'Erro ao carregar usuários');
     } finally {
@@ -73,7 +76,10 @@ export default function UsuariosList() {
   const loadTenants = async () => {
     try {
       const response = await getAdminTenants();
-      setTenants(response.data.data);
+      // Handle both { data: [...] } and { success: true, data: [...] } shapes
+      const payload = response.data?.data ?? response.data;
+      const tenantsArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setTenants(tenantsArray);
     } catch (err) {
       console.error('Erro ao carregar tenants:', err);
     }

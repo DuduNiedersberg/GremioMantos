@@ -100,7 +100,9 @@ export default function Dashboard() {
   const loadAdminMetrics = async () => {
     try {
       const response = await getAdminMetricas();
-      setAdminMetrics(response.data);
+      // Handle both { data: ... } and { success: true, data: ... } shapes
+      const payload = response.data?.data ?? response.data;
+      setAdminMetrics(payload);
     } catch (err) {
       console.error('Erro ao carregar métricas admin:', err);
     }
@@ -109,7 +111,10 @@ export default function Dashboard() {
   const loadTenants = async () => {
     try {
       const response = await getAdminTenants();
-      setTenants(response.data.data || []);
+      // Handle both { data: [...] } and { success: true, data: [...] } shapes
+      const payload = response.data?.data ?? response.data;
+      const tenantsArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setTenants(tenantsArray);
     } catch (err) {
       console.error('Erro ao carregar tenants:', err);
     }
@@ -172,32 +177,32 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <p className="text-blue-100 text-sm">Total de Tenants</p>
-                <p className="text-3xl font-bold">{adminMetrics.tenants.total}</p>
+                <p className="text-3xl font-bold">{adminMetrics.tenants?.total ?? 0}</p>
                 <p className="text-blue-100 text-xs mt-1">
-                  {adminMetrics.tenants.novos_30d} novos últimos 30 dias
+                  {adminMetrics.tenants?.novos_30d ?? 0} novos últimos 30 dias
                 </p>
               </div>
               <div>
                 <p className="text-blue-100 text-sm">Total de Usuários</p>
-                <p className="text-3xl font-bold">{adminMetrics.usuarios.total}</p>
+                <p className="text-3xl font-bold">{adminMetrics.usuarios?.total ?? 0}</p>
                 <p className="text-blue-100 text-xs mt-1">
-                  {adminMetrics.usuarios.novos_30d} novos últimos 30 dias
+                  {adminMetrics.usuarios?.novos_30d ?? 0} novos últimos 30 dias
                 </p>
               </div>
               <div>
                 <p className="text-blue-100 text-sm">Receita Total</p>
                 <p className="text-3xl font-bold">
-                  {formatCurrency(adminMetrics.financeiro.total_vendas)}
+                  {formatCurrency(adminMetrics.financeiro?.total_vendas ?? 0)}
                 </p>
                 <p className="text-blue-100 text-xs mt-1">
-                  Lucro: {formatCurrency(adminMetrics.financeiro.lucro_total)}
+                  Lucro: {formatCurrency(adminMetrics.financeiro?.lucro_total ?? 0)}
                 </p>
               </div>
             </div>
           </div>
 
           {/* Top Tenants */}
-          {adminMetrics.top_tenants.length > 0 && (
+          {(adminMetrics.top_tenants ?? []).length > 0 && (
             <div className="card">
               <h3 className="text-lg font-bold mb-4">🏆 Top Tenants</h3>
               <div className="overflow-x-auto">
@@ -210,11 +215,11 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {adminMetrics.top_tenants.slice(0, 5).map((tenant) => (
+                    {(adminMetrics.top_tenants ?? []).slice(0, 5).map((tenant) => (
                       <tr key={tenant.id} className="border-b border-neutral-100 dark:border-neutral-800">
                         <td className="p-2 font-medium">{tenant.nome}</td>
-                        <td className="p-2 text-center">{tenant.total_itens}</td>
-                        <td className="p-2 text-right">{formatCurrency(tenant.total_vendas)}</td>
+                        <td className="p-2 text-center">{tenant.total_itens ?? 0}</td>
+                        <td className="p-2 text-right">{formatCurrency(tenant.total_vendas ?? 0)}</td>
                       </tr>
                     ))}
                   </tbody>
