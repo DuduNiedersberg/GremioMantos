@@ -75,7 +75,15 @@ jobs:
         with:
           name: functionapp-package
           path: ${{ env.ZIP_NAME }}
+          
+      - name: Debug: verify admin functions in zip
+        run: |
+          echo "== dist/index.js (imports) =="
+          unzip -p "${{ env.ZIP_NAME }}" dist/index.js | grep -E "admin-(usuarios|tenants|planos|metricas)" || true
 
+          echo "== dist/functions/admin-usuarios.js =="
+          unzip -l "${{ env.ZIP_NAME }}" | grep -E "dist/functions/admin-usuarios.js" || true
+           
   deploy:
     runs-on: ubuntu-latest
     needs: build
@@ -110,4 +118,5 @@ jobs:
           echo "Testing itens endpoint..."
           curl -s -i "$BASE_URL/api/itens" | head -n 20
            
+
 
