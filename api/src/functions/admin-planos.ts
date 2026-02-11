@@ -203,7 +203,7 @@ async function adminPlanosHandlerWrapper(request: HttpRequest, context: Invocati
 
 app.http('admin-planos', {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
-  authLevel: 'authenticated',
+  authLevel: 'anonymous',
   route: 'admin/planos/{id?}/{action?}',
   handler: adminPlanosHandlerWrapper,
 });
