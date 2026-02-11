@@ -108,3 +108,13 @@ jobs:
           
           echo "Testing itens endpoint..."
           curl -s -i "$BASE_URL/api/itens" | head -n 20
+           - name: Warm up admin functions  
+          # Tenta acessar cada função admin (vai retornar 401 mas força o carregamento)
+          curl -s -o /dev/null -w "%{http_code} " "$BASE_URL/api/admin/usuarios" || true
+          curl -s -o /dev/null -w "%{http_code} " "$BASE_URL/api/admin/tenants" || true
+          curl -s -o /dev/null -w "%{http_code} " "$BASE_URL/api/admin/planos" || true
+          curl -s -o /dev/null -w "%{http_code} " "$BASE_URL/api/admin/metricas" || true
+          
+          echo ""
+          echo "Warm-up complete. Functions should be ready."
+
