@@ -166,7 +166,7 @@ async function adminMetricasHandlerWrapper(request: HttpRequest, context: Invoca
 
 app.http('admin-metricas', {
   methods: ['GET', 'OPTIONS'],
-  authLevel: 'authenticated',
+  authLevel: 'anonymous',
   route: 'admin/metricas',
   handler: adminMetricasHandlerWrapper,
 });
