@@ -18,9 +18,5 @@ import './functions/wishlist';
 import './functions/historico-precos';
 import './functions/qrcode';
 import './functions/dashboard';
-import '.functions/admin-usuarios'
-import '.functions/admin-tenants'
-import '.functions/admin-planos'
-import '.functions/admin-metricas'
 
 
