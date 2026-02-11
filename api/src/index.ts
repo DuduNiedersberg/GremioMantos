@@ -19,6 +19,12 @@ import './functions/historico-precos';
 import './functions/qrcode';
 import './functions/dashboard';
 import './functions/update-password';
+import './functions/admin-metricas';
+import './functions/admin-planos';
+import './functions/admin-tenants';
+import './functions/admin-usuarios';
+
+
 
 
 
