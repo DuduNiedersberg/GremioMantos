@@ -1,7 +1,7 @@
 # Troubleshooting Admin Functions 404 Errors
 
 ## Problem
-Admin functions (`/api/admin/metricas`, `/api/admin/planos`, `/api/admin/tenants`, `/api/admin/usuarios`) are returning 404 errors even though they appear to be registered in Azure Functions.
+Admin functions (`/api/platform/metricas`, `/api/platform/planos`, `/api/platform/tenants`, `/api/platform/usuarios`) are returning 404 errors even though they appear to be registered in Azure Functions.
 
 ## Investigation Summary
 
@@ -49,13 +49,13 @@ curl -i https://gremiomantosapi.azurewebsites.net/api/itens
 **Check**:
 - Test OPTIONS request first (doesn't require auth):
 ```bash
-curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Origin: http://localhost:3000"
 ```
 
 - Test with valid JWT token:
 ```bash
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Origin: http://localhost:3000"
 ```
@@ -112,7 +112,7 @@ curl -X POST http://localhost:7071/api/auth/register \
   -d '{"nome":"Admin","email":"admin@test.com","senha":"Test123!","tipo":"platform_admin"}'
 
 # Extract token from response, then test admin endpoint
-curl -i http://localhost:7071/api/admin/metricas \
+curl -i http://localhost:7071/api/platform/metricas \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -139,13 +139,13 @@ Test in this order:
 3. GET with valid platform_admin JWT (should return 200 with data)
 
 ### Step 5: Compare with Working Function
-If `/api/itens` works but `/api/admin/metricas` doesn't:
+If `/api/itens` works but `/api/platform/metricas` doesn't:
 1. Both use same middleware pattern
 2. Both use protectedRoute
 3. Both have same function registration
 4. The only difference is the route path
 
-Try accessing: `/api/admin/metricas` vs `/api/admin%2Fmetricas` (URL encoded)
+Try accessing: `/api/platform/metricas` vs `/api/admin%2Fmetricas` (URL encoded)
 
 ## Quick Fixes to Try
 
@@ -177,10 +177,10 @@ In Azure Portal → CORS:
 ## Common Gotchas
 
 1. **Case Sensitivity**: Azure Functions routes are case-sensitive
-   - Use `/api/admin/metricas` not `/api/Admin/Metricas`
+   - Use `/api/platform/metricas` not `/api/Admin/Metricas`
 
 2. **Trailing Slashes**: May cause issues
-   - Use `/api/admin/metricas` not `/api/admin/metricas/`
+   - Use `/api/platform/metricas` not `/api/platform/metricas/`
 
 3. **Auth Token Format**: Must be exactly:
    ```

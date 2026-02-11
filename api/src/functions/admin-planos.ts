@@ -17,7 +17,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
     const id = request.params.id;
     const action = request.params.action;
 
-    // GET /api/admin/planos - List all plans
+    // GET /api/platform/planos - List all plans
     if (method === 'GET' && !id) {
       const query = `
         SELECT 
@@ -35,7 +35,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
       }, 200, origin);
     }
 
-    // GET /api/admin/planos/:id - Get single plan with tenant count
+    // GET /api/platform/planos/:id - Get single plan with tenant count
     if (method === 'GET' && id) {
       const query = `
         SELECT 
@@ -68,7 +68,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
       }, 200, origin);
     }
 
-    // POST /api/admin/planos - Create new plan
+    // POST /api/platform/planos - Create new plan
     if (method === 'POST') {
       const body = await safeParseJson<any>(request);
 
@@ -116,7 +116,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
       return successResponse(result.recordset[0], 201, origin);
     }
 
-    // PUT /api/admin/planos/:id - Update plan
+    // PUT /api/platform/planos/:id - Update plan
     if (method === 'PUT' && id) {
       const body = await safeParseJson<any>(request);
 
@@ -163,7 +163,7 @@ async function adminPlanosHandler(request: HttpRequest, context: InvocationConte
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // PATCH /api/admin/planos/:id/toggle-active - Toggle active status
+    // PATCH /api/platform/planos/:id/toggle-active - Toggle active status
     if (method === 'PATCH' && id && action === 'toggle-active') {
       const query = `
         UPDATE planos
@@ -204,6 +204,6 @@ async function adminPlanosHandlerWrapper(request: HttpRequest, context: Invocati
 app.http('admin-planos', {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
   authLevel: 'anonymous',
-  route: 'admin/planos/{id?}/{action?}',
+  route: 'platform/planos/{id?}/{action?}',
   handler: adminPlanosHandlerWrapper,
 });

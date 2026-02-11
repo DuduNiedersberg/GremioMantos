@@ -333,9 +333,9 @@ TOKEN=$(curl -X POST http://localhost:7071/api/auth/login \
   -d '{"email":"user@example.com","senha":"Pass123!@"}' \
   | jq -r '.token')
 
-# Try admin endpoint (should fail with 403)
-curl -X DELETE http://localhost:7071/api/admin/delete/1 \
-  -H "Authorization: ******
+# Try platform endpoint (should fail with 403)
+curl -X DELETE http://localhost:7071/api/platform/delete/1 \
+  -H "Authorization: Bearer $TOKEN"
 
 # Login as admin
 ADMIN_TOKEN=$(curl -X POST http://localhost:7071/api/auth/login \
@@ -343,9 +343,9 @@ ADMIN_TOKEN=$(curl -X POST http://localhost:7071/api/auth/login \
   -d '{"email":"admin@example.com","senha":"Admin123!@"}' \
   | jq -r '.token')
 
-# Try admin endpoint (should succeed)
-curl -X DELETE http://localhost:7071/api/admin/delete/1 \
-  -H "Authorization: ******
+# Try platform endpoint (should succeed)
+curl -X DELETE http://localhost:7071/api/platform/delete/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ---

@@ -19,7 +19,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
 
     const isPlatformAdmin = user.tipo === 'platform_admin';
 
-    // GET /api/admin/usuarios - List all users
+    // GET /api/platform/usuarios - List all users
     if (method === 'GET' && !id) {
       const rawPage = parseInt(request.query.get('page') || '1');
       const rawPerPage = parseInt(request.query.get('perPage') || '30');
@@ -84,7 +84,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
       }, 200, origin);
     }
 
-    // GET /api/admin/usuarios/:id - Get single user
+    // GET /api/platform/usuarios/:id - Get single user
     if (method === 'GET' && id && !action) {
       let whereClause = 'WHERE u.id = @id';
       const params: Record<string, any> = { id };
@@ -114,7 +114,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // POST /api/admin/usuarios - Create user
+    // POST /api/platform/usuarios - Create user
     if (method === 'POST') {
       const body = await safeParseJson<any>(request);
 
@@ -183,7 +183,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
       return successResponse(result.recordset[0], 201, origin);
     }
 
-    // PUT /api/admin/usuarios/:id - Update user
+    // PUT /api/platform/usuarios/:id - Update user
     if (method === 'PUT' && id) {
       const body = await safeParseJson<any>(request);
 
@@ -237,7 +237,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // PATCH /api/admin/usuarios/:id/toggle-active - Toggle active status
+    // PATCH /api/platform/usuarios/:id/toggle-active - Toggle active status
     if (method === 'PATCH' && id && action === 'toggle-active') {
       let whereClause = 'WHERE id = @id';
       const params: Record<string, any> = { id };
@@ -267,7 +267,7 @@ async function adminUsuariosHandler(request: HttpRequest, context: InvocationCon
       }, 200, origin);
     }
 
-    // PATCH /api/admin/usuarios/:id/reset-password - Reset password
+    // PATCH /api/platform/usuarios/:id/reset-password - Reset password
     if (method === 'PATCH' && id && action === 'reset-password') {
       const body = await safeParseJson<any>(request);
 
@@ -338,6 +338,6 @@ async function adminUsuariosHandlerWrapper(request: HttpRequest, context: Invoca
 app.http('admin-usuarios', {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
   authLevel: 'anonymous',
-  route: 'admin/usuarios/{id?}/{action?}',
+  route: 'platform/usuarios/{id?}/{action?}',
   handler: adminUsuariosHandlerWrapper,
 });

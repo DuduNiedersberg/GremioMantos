@@ -1,7 +1,7 @@
 # Admin Functions 404 Issue - Investigation Summary
 
 ## Issue Description
-Admin functions (`/api/admin/metricas`, `/api/admin/planos`, `/api/admin/tenants`, `/api/admin/usuarios`) were returning 404 Not Found errors even though they appeared to be registered in Azure Functions.
+Admin functions (`/api/platform/metricas`, `/api/platform/planos`, `/api/platform/tenants`, `/api/platform/usuarios`) were returning 404 Not Found errors even though they appeared to be registered in Azure Functions.
 
 ## Root Cause Analysis
 
@@ -96,7 +96,7 @@ If admin functions work locally but not in Azure, it's an Azure-specific issue.
 
 ### Step 2: Test OPTIONS Requests
 ```bash
-curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Origin: http://localhost:3000"
 ```
 
@@ -105,7 +105,7 @@ Should return 200/204 with CORS headers. If this returns 404, functions aren't l
 ### Step 3: Test With Valid JWT
 ```bash
 # Get a platform_admin JWT token first, then:
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 

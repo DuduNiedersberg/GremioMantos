@@ -157,7 +157,7 @@ if (roleError) return roleError;
 ### Before Fix
 ```bash
 # Admin endpoints returned 404 or network errors
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <token>"
 # Result: 404 Not Found (or network error)
 ```
@@ -165,15 +165,15 @@ curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
 ### After Fix
 ```bash
 # Now returns proper status codes with CORS headers
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <invalid-token>"
 # Result: 401 Unauthorized with CORS headers
 
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <tenant-member-token>"
 # Result: 403 Forbidden with CORS headers
 
-curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
+curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/platform/metricas \
   -H "Authorization: Bearer <platform-admin-token>"
 # Result: 200 OK with data and CORS headers
 ```
@@ -189,13 +189,13 @@ curl -i -X GET https://gremiomantosapi.azurewebsites.net/api/admin/metricas \
 
 4. **Verify CORS headers are present**:
    ```bash
-   curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/admin/metricas
+   curl -i -X OPTIONS https://gremiomantosapi.azurewebsites.net/api/platform/metricas
    # Should see: Access-Control-Allow-Origin, Access-Control-Allow-Methods, etc.
    ```
 
 5. **Test from browser console**:
    ```javascript
-   fetch('https://gremiomantosapi.azurewebsites.net/api/admin/metricas', {
+   fetch('https://gremiomantosapi.azurewebsites.net/api/platform/metricas', {
      headers: { 'Authorization': 'Bearer YOUR_TOKEN' }
    }).then(r => r.json()).then(console.log).catch(console.error)
    ```

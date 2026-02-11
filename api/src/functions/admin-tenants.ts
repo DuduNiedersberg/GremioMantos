@@ -17,7 +17,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
     const id = request.params.id;
     const action = request.params.action;
 
-    // GET /api/admin/tenants - List all tenants
+    // GET /api/platform/tenants - List all tenants
     if (method === 'GET' && !id) {
       const rawPage = parseInt(request.query.get('page') || '1');
       const rawPerPage = parseInt(request.query.get('perPage') || '30');
@@ -74,7 +74,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       }, 200, origin);
     }
 
-    // GET /api/admin/tenants/:id - Get single tenant with metrics
+    // GET /api/platform/tenants/:id - Get single tenant with metrics
     if (method === 'GET' && id && !action) {
       const query = `
         SELECT 
@@ -126,7 +126,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       }, 200, origin);
     }
 
-    // POST /api/admin/tenants - Create new tenant
+    // POST /api/platform/tenants - Create new tenant
     if (method === 'POST') {
       const body = await safeParseJson<any>(request);
 
@@ -176,7 +176,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       return successResponse(result.recordset[0], 201, origin);
     }
 
-    // PUT /api/admin/tenants/:id - Update tenant
+    // PUT /api/platform/tenants/:id - Update tenant
     if (method === 'PUT' && id) {
       const body = await safeParseJson<any>(request);
 
@@ -218,7 +218,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       return successResponse(result.recordset[0], 200, origin);
     }
 
-    // PATCH /api/admin/tenants/:id/toggle-active - Toggle active status
+    // PATCH /api/platform/tenants/:id/toggle-active - Toggle active status
     if (method === 'PATCH' && id && action === 'toggle-active') {
       const query = `
         UPDATE tenants
@@ -240,7 +240,7 @@ async function adminTenantsHandler(request: HttpRequest, context: InvocationCont
       }, 200, origin);
     }
 
-    // PATCH /api/admin/tenants/:id/suspend - Suspend/unsuspend tenant
+    // PATCH /api/platform/tenants/:id/suspend - Suspend/unsuspend tenant
     if (method === 'PATCH' && id && action === 'suspend') {
       const body = await safeParseJson<any>(request);
 
@@ -295,6 +295,6 @@ async function adminTenantsHandlerWrapper(request: HttpRequest, context: Invocat
 app.http('admin-tenants', {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
   authLevel: 'anonymous',
-  route: 'admin/tenants/{id?}/{action?}',
+  route: 'platform/tenants/{id?}/{action?}',
   handler: adminTenantsHandlerWrapper,
 });
