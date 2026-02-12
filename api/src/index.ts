@@ -23,6 +23,7 @@ import './functions/admin-metricas';
 import './functions/admin-planos';
 import './functions/admin-tenants';
 import './functions/admin-usuarios';
+import './functions/upload';
 
 
 
