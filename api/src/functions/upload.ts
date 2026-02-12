@@ -8,6 +8,7 @@ import {
   deleteImage,
   isValidMimeType,
   getTenantIdFromFilename,
+  MAX_FILE_SIZE,
 } from '../lib/storage';
 
 /**
@@ -93,14 +94,13 @@ async function uploadHandler(
     }
 
     // Validate file size (5MB max)
-    const MAX_SIZE = 5 * 1024 * 1024;
-    if (file.buffer.length > MAX_SIZE) {
+    if (file.buffer.length > MAX_FILE_SIZE) {
       return addCorsHeaders(
         {
           status: 400,
           jsonBody: {
             error: 'File too large',
-            message: 'Maximum file size is 5MB',
+            message: `Maximum file size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
           },
         },
         origin
@@ -154,30 +154,52 @@ async function uploadHandler(
         }
       );
     } else if (tipo === 'logo_tenant') {
-      // Update tenant logo_url
-      const result = await executeQuery(
-        `UPDATE tenants SET logo_url = @url WHERE id = @tenant_id`,
-        {
-          url: uploadResult.url,
-          tenant_id: tenantId,
-        }
-      );
+      // Update tenant logo_url (if column exists)
+      try {
+        const result = await executeQuery(
+          `UPDATE tenants SET logo_url = @url WHERE id = @tenant_id`,
+          {
+            url: uploadResult.url,
+            tenant_id: tenantId,
+          }
+        );
 
-      if (result.rowsAffected[0] === 0) {
-        context.warn('Tenant not found for logo update:', tenantId);
+        if (result.rowsAffected[0] === 0) {
+          context.warn('Tenant not found for logo update:', tenantId);
+        }
+      } catch (error: any) {
+        // Handle missing column gracefully (SQL Server error 207: Invalid column name)
+        const isColumnMissing = error.number === 207 || 
+                               (error.message && error.message.includes('Invalid column name'));
+        if (isColumnMissing) {
+          context.warn('logo_url column does not exist in tenants table');
+        } else {
+          throw error;
+        }
       }
     } else if (tipo === 'avatar_usuario') {
-      // Update user avatar_url
-      const result = await executeQuery(
-        `UPDATE usuarios SET avatar_url = @url WHERE id = @user_id`,
-        {
-          url: uploadResult.url,
-          user_id: user.userId,
-        }
-      );
+      // Update user avatar_url (if column exists)
+      try {
+        const result = await executeQuery(
+          `UPDATE usuarios SET avatar_url = @url WHERE id = @user_id`,
+          {
+            url: uploadResult.url,
+            user_id: user.userId,
+          }
+        );
 
-      if (result.rowsAffected[0] === 0) {
-        context.warn('User not found for avatar update:', user.userId);
+        if (result.rowsAffected[0] === 0) {
+          context.warn('User not found for avatar update:', user.userId);
+        }
+      } catch (error: any) {
+        // Handle missing column gracefully (SQL Server error 207: Invalid column name)
+        const isColumnMissing = error.number === 207 || 
+                               (error.message && error.message.includes('Invalid column name'));
+        if (isColumnMissing) {
+          context.warn('avatar_url column does not exist in usuarios table');
+        } else {
+          throw error;
+        }
       }
     }
 

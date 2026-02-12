@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
  * Azure Blob Storage Configuration
  */
 const CONTAINER_NAME = 'camisetas-fotos';
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
@@ -110,7 +110,9 @@ export async function uploadImage(
     await blockBlobClient.uploadData(fileBuffer, {
       blobHTTPHeaders: {
         blobContentType: contentType,
-        blobCacheControl: 'public, max-age=31536000', // 1 year
+        // 1 year cache for immutable URLs (each file has unique UUID)
+        // If image is replaced, it will have a new UUID/URL
+        blobCacheControl: 'public, max-age=31536000',
       },
       metadata: blobMetadata,
     });
@@ -200,9 +202,14 @@ export async function moveImageFromTemp(
     const sourceBlob = containerClient.getBlockBlobClient(tempFilename);
     const targetBlob = containerClient.getBlockBlobClient(newFilename);
 
-    // Copy blob to new location
-    const copyResult = await targetBlob.beginCopyFromURL(sourceBlob.url);
-    await copyResult.pollUntilDone();
+    // Copy blob to new location with timeout handling
+    try {
+      const copyPoller = await targetBlob.beginCopyFromURL(sourceBlob.url);
+      await copyPoller.pollUntilDone();
+    } catch (copyError) {
+      console.error('Copy operation failed:', copyError);
+      throw new Error('Failed to copy image to new location');
+    }
 
     // Update metadata
     const sourceProps = await sourceBlob.getProperties();
