@@ -38,7 +38,10 @@ export default function PlanosList() {
     try {
       setLoading(true);
       const response = await getAdminPlanos();
-      setPlanos(response.data.data);
+      // Handle both { data: [...] } and { success: true, data: [...] } shapes
+      const payload = response.data?.data ?? response.data;
+      const planosArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setPlanos(planosArray);
     } catch (err: any) {
       error(err.response?.data?.message || 'Erro ao carregar planos');
     } finally {
@@ -133,7 +136,7 @@ export default function PlanosList() {
                   Preço Mensal
                 </span>
                 <span className="font-bold text-gremio-celeste">
-                  {formatCurrency(plano.preco_mensal)}
+                  {formatCurrency(plano.preco_mensal ?? 0)}
                 </span>
               </div>
 
@@ -142,7 +145,7 @@ export default function PlanosList() {
                   Taxa de Comissão
                 </span>
                 <span className="font-medium">
-                  {plano.taxa_comissao}%
+                  {plano.taxa_comissao ?? 0}%
                 </span>
               </div>
 
@@ -196,7 +199,7 @@ export default function PlanosList() {
                 Tenants usando
               </span>
               <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">
-                {plano.total_tenants}
+                {plano.total_tenants ?? 0}
               </span>
             </div>
 

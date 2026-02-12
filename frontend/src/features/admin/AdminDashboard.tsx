@@ -56,7 +56,9 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       const response = await getAdminMetricas();
-      setMetrics(response.data);
+      // Handle both { data: ... } and { success: true, data: ... } shapes
+      const payload = response.data?.data ?? response.data;
+      setMetrics(payload);
     } catch (err: any) {
       error(err.response?.data?.message || 'Erro ao carregar métricas');
     } finally {
@@ -95,25 +97,25 @@ export default function AdminDashboard() {
         <StatCard
           icon={Building2}
           label="Total de Tenants"
-          value={metrics.tenants.total}
+          value={metrics.tenants?.total ?? 0}
           color="blue"
         />
         <StatCard
           icon={Building2}
           label="Tenants Ativos"
-          value={metrics.tenants.ativos}
+          value={metrics.tenants?.ativos ?? 0}
           color="green"
         />
         <StatCard
           icon={Building2}
           label="Tenants Suspensos"
-          value={metrics.tenants.suspensos}
+          value={metrics.tenants?.suspensos ?? 0}
           color="red"
         />
         <StatCard
           icon={Building2}
           label="Novos (30d)"
-          value={metrics.tenants.novos_30d}
+          value={metrics.tenants?.novos_30d ?? 0}
           color="purple"
         />
       </div>
@@ -127,7 +129,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="text-center">
             <div className="text-3xl font-bold text-gremio-celeste">
-              {metrics.usuarios.total}
+              {metrics.usuarios?.total ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Total
@@ -135,7 +137,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-green-600">
-              {metrics.usuarios.ativos}
+              {metrics.usuarios?.ativos ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Ativos
@@ -143,7 +145,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-blue-600">
-              {metrics.usuarios.novos_7d}
+              {metrics.usuarios?.novos_7d ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Novos (7d)
@@ -151,7 +153,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-purple-600">
-              {metrics.usuarios.novos_30d}
+              {metrics.usuarios?.novos_30d ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Novos (30d)
@@ -163,7 +165,7 @@ export default function AdminDashboard() {
         <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
           <h3 className="font-semibold mb-3">Usuários por Tipo</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Object.entries(metrics.usuarios.por_tipo).map(([tipo, count]) => (
+            {Object.entries(metrics.usuarios?.por_tipo ?? {}).map(([tipo, count]) => (
               <div key={tipo} className="bg-neutral-50 dark:bg-neutral-700 rounded-lg p-3">
                 <div className="text-lg font-bold">{count}</div>
                 <div className="text-xs text-neutral-600 dark:text-neutral-400">
@@ -184,7 +186,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center">
             <div className="text-3xl font-bold text-gremio-celeste">
-              {metrics.itens.total}
+              {metrics.itens?.total ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Total
@@ -192,7 +194,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-blue-600">
-              {metrics.itens.estoque}
+              {metrics.itens?.estoque ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Em Estoque
@@ -200,7 +202,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-green-600">
-              {metrics.itens.vendidos}
+              {metrics.itens?.vendidos ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Vendidos
@@ -208,7 +210,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-orange-600">
-              {metrics.itens.trocados}
+              {metrics.itens?.trocados ?? 0}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Trocados
@@ -226,7 +228,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="text-center">
             <div className="text-3xl font-bold text-green-600">
-              {formatCurrency(metrics.financeiro.total_vendas)}
+              {formatCurrency(metrics.financeiro?.total_vendas ?? 0)}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Total em Vendas
@@ -234,7 +236,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-gremio-celeste">
-              {formatCurrency(metrics.financeiro.lucro_total)}
+              {formatCurrency(metrics.financeiro?.lucro_total ?? 0)}
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Lucro Total
@@ -242,7 +244,7 @@ export default function AdminDashboard() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-purple-600">
-              {metrics.financeiro.margem_media.toFixed(1)}%
+              {(metrics.financeiro?.margem_media ?? 0).toFixed(1)}%
             </div>
             <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               Margem Média
@@ -268,7 +270,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {metrics.top_tenants.map((tenant) => (
+                {(metrics.top_tenants ?? []).map((tenant) => (
                   <tr
                     key={tenant.id}
                     className="border-b border-neutral-100 dark:border-neutral-800"
@@ -285,7 +287,7 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
-            {metrics.top_tenants.length === 0 && (
+            {(metrics.top_tenants ?? []).length === 0 && (
               <div className="text-center py-8 text-neutral-500">
                 Nenhum tenant encontrado
               </div>
@@ -300,7 +302,7 @@ export default function AdminDashboard() {
             Tenants por Plano
           </h2>
           <div className="space-y-3">
-            {metrics.tenants_por_plano.map((item) => (
+            {(metrics.tenants_por_plano ?? []).map((item) => (
               <div
                 key={item.plano}
                 className="flex justify-between items-center p-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg"
@@ -314,7 +316,7 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
-          {metrics.tenants_por_plano.length === 0 && (
+          {(metrics.tenants_por_plano ?? []).length === 0 && (
             <div className="text-center py-8 text-neutral-500">
               Nenhum dado disponível
             </div>

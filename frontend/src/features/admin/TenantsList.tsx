@@ -52,8 +52,11 @@ export default function TenantsList() {
       if (search) params.search = search;
 
       const response = await getAdminTenants(params);
-      setTenants(response.data.data);
-      setTotal(response.data.total);
+      // Handle both { data: [...] } and { success: true, data: { data: [...], total: ... } } shapes
+      const payload = response.data?.data ?? response.data;
+      const tenantsArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setTenants(tenantsArray);
+      setTotal(response.data?.total ?? payload?.total ?? 0);
     } catch (err: any) {
       error(err.response?.data?.message || 'Erro ao carregar tenants');
     } finally {
@@ -64,7 +67,10 @@ export default function TenantsList() {
   const loadPlanos = async () => {
     try {
       const response = await getAdminPlanos();
-      setPlanos(response.data.data);
+      // Handle both { data: [...] } and { success: true, data: [...] } shapes
+      const payload = response.data?.data ?? response.data;
+      const planosArray = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setPlanos(planosArray);
     } catch (err) {
       console.error('Erro ao carregar planos:', err);
     }
@@ -175,8 +181,8 @@ export default function TenantsList() {
                     {tenant.plano_nome || '-'}
                   </span>
                 </td>
-                <td className="p-4 text-center">{tenant.total_usuarios}</td>
-                <td className="p-4 text-center">{tenant.total_itens}</td>
+                <td className="p-4 text-center">{tenant.total_usuarios ?? 0}</td>
+                <td className="p-4 text-center">{tenant.total_itens ?? 0}</td>
                 <td className="p-4">
                   <div className="flex gap-1">
                     <span
