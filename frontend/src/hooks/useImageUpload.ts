@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { uploadImage, deleteImage, UploadOptions, UploadResponse } from '../services/api/upload';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,6 +21,7 @@ export function useImageUpload(): UseImageUploadReturn {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedImages, setUploadedImages] = useState<UploadResponse[]>([]);
+  const fileProgressRef = useRef<Record<number, number>>({});
 
   const validateFile = (file: File): string | null => {
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -48,8 +49,8 @@ export function useImageUpload(): UseImageUploadReturn {
     setUploadProgress(0);
 
     try {
-      // Track progress for each file
-      const fileProgress: Record<number, number> = {};
+      // Reset progress tracking for new upload
+      fileProgressRef.current = {};
       
       const uploadPromises = files.map(async (file, index) => {
         const validationError = validateFile(file);
@@ -60,10 +61,10 @@ export function useImageUpload(): UseImageUploadReturn {
         const result = await uploadImage(file, token, {
           ...options,
           onProgress: (progress) => {
-            // Update progress for this specific file
-            fileProgress[index] = progress;
+            // Update progress for this specific file using ref
+            fileProgressRef.current[index] = progress;
             // Calculate average progress across all files
-            const totalProgress = Object.values(fileProgress).reduce((sum, p) => sum + p, 0);
+            const totalProgress = Object.values(fileProgressRef.current).reduce((sum, p) => sum + p, 0);
             const avgProgress = Math.round(totalProgress / files.length);
             setUploadProgress(avgProgress);
           },

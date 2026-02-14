@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, AlertCircle } from 'lucide-react';
 import { useImageUpload } from '../../hooks/useImageUpload';
+import { UploadResponse } from '../../services/api/upload';
 import ImagePreview from './ImagePreview';
 import Button from '../../shared/components/Button';
 import './ImageUploader.styles.css';
@@ -10,7 +11,7 @@ interface ImageUploaderProps {
   tipo: 'item' | 'logo_tenant' | 'avatar_usuario';
   itemId?: number;
   maxFiles?: number;
-  onUploadComplete?: (uploadedImages: any[]) => void;
+  onUploadComplete?: (uploadedImages: UploadResponse[]) => void;
   existingImages?: Array<{ url: string; filename: string; size?: number }>;
 }
 
@@ -32,13 +33,20 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   } = useImageUpload();
 
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
-  // Cleanup object URLs to prevent memory leaks
+  // Create object URLs when files change
   useEffect(() => {
+    // Revoke old URLs
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    
+    // Create new URLs
+    const newUrls = previewFiles.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(newUrls);
+
+    // Cleanup on unmount
     return () => {
-      previewFiles.forEach((file) => {
-        URL.revokeObjectURL(URL.createObjectURL(file));
-      });
+      newUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [previewFiles]);
 
@@ -158,7 +166,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             {previewFiles.map((file, index) => (
               <div key={index} className="preview-item">
                 <img
-                  src={URL.createObjectURL(file)}
+                  src={previewUrls[index]}
                   alt={file.name}
                   className="preview-image"
                 />
