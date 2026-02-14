@@ -1,123 +1,73 @@
-name: Build and deploy Azure Functions API (OIDC) - gremiomantosapi
+# Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
+name: Build and deploy Node.js project to Azure Function App - gremiomantosapi
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "api/**"
-      - ".github/workflows/main_gremiomantosapi.yml"
+    branches:
+      - main
   workflow_dispatch:
 
 env:
-  FUNCTION_APP_NAME: gremiomantosapi
-  NODE_VERSION: "20.x"
-  API_DIR: "api"
-  OUTPUT_DIR: "output"
-  ZIP_NAME: "deploy.zip"
-
-permissions:
-  contents: read
-  id-token: write
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
+  NODE_VERSION: '20.x' # set this to the node version to use (supports 8.x, 10.x, 12.x)
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    permissions:
+      contents: read #This is required for actions/checkout
+      
     steps:
-      - name: Checkout
+      - name: 'Checkout GitHub Action'
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node ${{ env.NODE_VERSION }} Environment
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
-      - name: Install dependencies and build (API)
-        working-directory: ${{ env.API_DIR }}
+      - name: 'Resolve Project Dependencies Using Npm'
+        shell: pwsh
         run: |
-          rm -rf dist
-          npm ci
-          npm run build
-          ls -la dist/
-
-      - name: Prepare deployment package
-        run: |
-          rm -rf "${{ env.OUTPUT_DIR }}"
-          mkdir -p "${{ env.OUTPUT_DIR }}"
-
-          # Copy runtime files expected by Azure Functions
-          cp "${{ env.API_DIR }}/host.json" "${{ env.OUTPUT_DIR }}/"
-          cp "${{ env.API_DIR }}/package.json" "${{ env.OUTPUT_DIR }}/"
-          cp "${{ env.API_DIR }}/package-lock.json" "${{ env.OUTPUT_DIR }}/"
-          
-          # Copy compiled code (KEEP dist/ structure - Azure Functions v4 needs it!)
-          cp -R "${{ env.API_DIR }}/dist" "${{ env.OUTPUT_DIR }}/dist"
-
-          # Install production dependencies only
-          pushd "${{ env.OUTPUT_DIR }}"
-          npm ci --omit=dev
+          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          npm install
+          npm run build --if-present
+          npm run test --if-present
           popd
 
-          # Zip package
-          pushd "${{ env.OUTPUT_DIR }}"
-          zip -r "../${{ env.ZIP_NAME }}" . -q
-          popd
-
-          ls -lh "${{ env.ZIP_NAME }}"
-          
-          # Debug: Show structure
-          echo "=== Deployment package structure ==="
-          unzip -l "${{ env.ZIP_NAME }}" | grep -E "(host.json|package.json|dist/)" | head -n 30
-
-      - name: Upload deployment artifact
+      - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: functionapp-package
-          path: ${{ env.ZIP_NAME }}
-          
-      - name: Verify admin functions in zip
-        run: |
-          echo "== dist/index.js (imports) =="
-          unzip -p "${{ env.ZIP_NAME }}" dist/index.js | grep -E "admin-(usuarios|tenants|planos|metricas)" || true
+          name: node-app
+          path: .
 
-          echo "== dist/functions/admin-usuarios.js =="
-          unzip -l "${{ env.ZIP_NAME }}" | grep -E "dist/functions/admin-usuarios.js" || true
-           
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: build
+    permissions:
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
+
     steps:
-      - name: Download deployment artifact
+      - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: functionapp-package
-
-      - name: Azure Login (OIDC)
+          name: node-app
+      
+      - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_854C29EACFA44F1E8395B6177A553D75 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_B42162C5B83D48BCB2BC9AF22E57127A }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_29A3443071794A47AB7DB0240F102AD3 }}
 
-      - name: Deploy to Azure Functions
+      - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1
+        id: fa
         with:
-          app-name: ${{ env.FUNCTION_APP_NAME }}
-          package: ${{ env.ZIP_NAME }}
-
-      - name: Wait for cold start
-        run: sleep 30
-
-      - name: Health check
-        run: |
-          BASE_URL="https://${{ env.FUNCTION_APP_NAME }}.azurewebsites.net"
-          echo "Testing health endpoint..."
-          curl -s -i "$BASE_URL/api/health" | head -n 20 || echo "Health endpoint not found (expected)"
+          app-name: 'gremiomantosapi'
+          slot-name: 'Production'
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           
-          echo "Testing itens endpoint..."
-          curl -s -i "$BASE_URL/api/itens" | head -n 20
-           
-
-
-
