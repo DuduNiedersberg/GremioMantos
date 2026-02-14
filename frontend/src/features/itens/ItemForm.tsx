@@ -9,6 +9,7 @@ import Select from '../../shared/components/Select';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
 import { SITUACOES, TAMANHOS, MARCAS, MODELOS, TIPOS_ITEM, CONDICOES } from '../../shared/utils/constants';
+import ImageUploader from '../../components/ImageUploader';
 
 export default function ItemForm() {
   const { id } = useParams();
@@ -346,6 +347,21 @@ export default function ItemForm() {
               focus:outline-none focus:ring-2 focus:ring-gremio-celeste-500/20 focus:border-gremio-celeste-500"
           />
         </div>
+
+        {/* Image Upload - Only available when editing */}
+        {isEditing && id && (
+          <div className="card">
+            <h2 className="text-lg font-bold mb-4">Imagens do Item</h2>
+            <ImageUploader
+              tipo="item"
+              itemId={parseInt(id)}
+              maxFiles={5}
+              onUploadComplete={(uploadedImages) => {
+                success(`${uploadedImages.length} imagem(ns) enviada(s) com sucesso!`);
+              }}
+            />
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end space-x-4">
