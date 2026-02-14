@@ -35,16 +35,13 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
-  // Create object URLs when files change
+  // Create and cleanup object URLs when files change
   useEffect(() => {
-    // Revoke old URLs
-    previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    
-    // Create new URLs
+    // Create new URLs for current files
     const newUrls = previewFiles.map((file) => URL.createObjectURL(file));
     setPreviewUrls(newUrls);
 
-    // Cleanup on unmount
+    // Cleanup function revokes URLs created in this effect
     return () => {
       newUrls.forEach((url) => URL.revokeObjectURL(url));
     };
