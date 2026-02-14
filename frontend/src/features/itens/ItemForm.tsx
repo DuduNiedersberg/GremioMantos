@@ -354,10 +354,13 @@ export default function ItemForm() {
             <h2 className="text-lg font-bold mb-4">Imagens do Item</h2>
             <ImageUploader
               tipo="item"
-              itemId={parseInt(id)}
+              itemId={parseInt(id, 10)}
               maxFiles={5}
               onUploadComplete={(uploadedImages) => {
-                success(`${uploadedImages.length} imagem(ns) enviada(s) com sucesso!`);
+                const message = uploadedImages.length === 1 
+                  ? '1 imagem enviada com sucesso!' 
+                  : `${uploadedImages.length} imagens enviadas com sucesso!`;
+                success(message);
               }}
             />
           </div>
