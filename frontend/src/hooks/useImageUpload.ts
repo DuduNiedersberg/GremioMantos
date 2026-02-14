@@ -7,7 +7,7 @@ interface UseImageUploadReturn {
   isUploading: boolean;
   error: string | null;
   uploadedImages: UploadResponse[];
-  handleUpload: (files: File[], options: Omit<UploadOptions, 'onProgress'>) => Promise<void>;
+  handleUpload: (files: File[], options: Omit<UploadOptions, 'onProgress'>) => Promise<UploadResponse[]>;
   handleDelete: (filename: string) => Promise<void>;
   clearError: () => void;
 }
@@ -40,7 +40,7 @@ export function useImageUpload(): UseImageUploadReturn {
   ) => {
     if (!token) {
       setError('Você precisa estar autenticado para fazer upload');
-      return;
+      return [];
     }
 
     setError(null);
@@ -48,7 +48,10 @@ export function useImageUpload(): UseImageUploadReturn {
     setUploadProgress(0);
 
     try {
-      const uploadPromises = files.map(async (file) => {
+      // Track progress for each file
+      const fileProgress: Record<number, number> = {};
+      
+      const uploadPromises = files.map(async (file, index) => {
         const validationError = validateFile(file);
         if (validationError) {
           throw new Error(validationError);
@@ -57,7 +60,12 @@ export function useImageUpload(): UseImageUploadReturn {
         const result = await uploadImage(file, token, {
           ...options,
           onProgress: (progress) => {
-            setUploadProgress(progress);
+            // Update progress for this specific file
+            fileProgress[index] = progress;
+            // Calculate average progress across all files
+            const totalProgress = Object.values(fileProgress).reduce((sum, p) => sum + p, 0);
+            const avgProgress = Math.round(totalProgress / files.length);
+            setUploadProgress(avgProgress);
           },
         });
 
@@ -67,9 +75,11 @@ export function useImageUpload(): UseImageUploadReturn {
       const results = await Promise.all(uploadPromises);
       setUploadedImages((prev) => [...prev, ...results]);
       setUploadProgress(100);
+      return results;
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Erro ao fazer upload');
       console.error('Upload error:', err);
+      return [];
     } finally {
       setIsUploading(false);
       setTimeout(() => setUploadProgress(0), 1000);

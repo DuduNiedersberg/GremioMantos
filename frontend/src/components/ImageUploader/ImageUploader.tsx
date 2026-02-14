@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, AlertCircle } from 'lucide-react';
 import { useImageUpload } from '../../hooks/useImageUpload';
@@ -33,6 +33,15 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
 
+  // Cleanup object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      previewFiles.forEach((file) => {
+        URL.revokeObjectURL(URL.createObjectURL(file));
+      });
+    };
+  }, [previewFiles]);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Limit files
     const filesToAdd = acceptedFiles.slice(0, maxFiles - previewFiles.length);
@@ -59,10 +68,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   const handleUploadClick = async () => {
     if (previewFiles.length === 0) return;
 
-    await handleUpload(previewFiles, { tipo, itemId });
+    const results = await handleUpload(previewFiles, { tipo, itemId });
     
-    if (onUploadComplete) {
-      onUploadComplete(uploadedImages);
+    if (onUploadComplete && results.length > 0) {
+      onUploadComplete(results);
     }
     
     // Clear preview files after successful upload
