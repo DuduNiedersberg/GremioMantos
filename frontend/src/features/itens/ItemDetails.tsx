@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, QrCode } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, QrCode, Shirt } from 'lucide-react';
 import { getItem, deleteItem } from '../../lib/api';
 import { Item } from '../../types';
 import { formatCurrency, formatDate } from '../../shared/utils/formatters';
@@ -107,9 +107,40 @@ export default function ItemDetails() {
       {/* Item Image and Basic Info */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card">
-          <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 rounded-lg flex items-center justify-center">
-            <span className="text-8xl">👕</span>
+          <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 rounded-lg flex items-center justify-center overflow-hidden">
+            {item.imagem_principal_url ? (
+              <img 
+                src={item.imagem_principal_url} 
+                alt={item.nome}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Shirt className="w-24 h-24 text-neutral-400" />
+            )}
           </div>
+          
+          {/* Galeria de imagens */}
+          {item.imagens && item.imagens.length > 1 && (
+            <div className="grid grid-cols-4 gap-2 mt-4">
+              {item.imagens.map((img, index) => (
+                <button
+                  key={img.id}
+                  onClick={() => {/* Futuramente: trocar imagem principal exibida */}}
+                  className={`aspect-square rounded-lg overflow-hidden border-2 ${
+                    img.e_principal 
+                      ? 'border-yellow-500' 
+                      : 'border-transparent hover:border-gremio-celeste'
+                  }`}
+                >
+                  <img 
+                    src={img.thumbnail_url || img.url_blob}
+                    alt={`${item.nome} - Imagem ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 card">
