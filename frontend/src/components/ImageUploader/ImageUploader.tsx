@@ -1,10 +1,12 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X, AlertCircle } from 'lucide-react';
+import { Upload, X, AlertCircle, Star } from 'lucide-react';
 import { useImageUpload } from '../../hooks/useImageUpload';
 import { UploadResponse } from '../../services/api/upload';
 import ImagePreview from './ImagePreview';
 import Button from '../../shared/components/Button';
+import { getItemImagens, setImagemPrincipal, deleteItemImagem } from '../../lib/api';
+import { ImagemItem } from '../../types';
 import './ImageUploader.styles.css';
 
 interface ImageUploaderProps {
@@ -34,6 +36,30 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [itemImages, setItemImages] = useState<ImagemItem[]>([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+  const [markAsPrincipal, setMarkAsPrincipal] = useState(false);
+
+  // Load images from backend if itemId is provided
+  useEffect(() => {
+    if (tipo === 'item' && itemId) {
+      loadItemImages();
+    }
+  }, [tipo, itemId]);
+
+  const loadItemImages = async () => {
+    if (!itemId) return;
+    
+    try {
+      setLoadingImages(true);
+      const response = await getItemImagens(itemId);
+      setItemImages(response.data.data.data || []);
+    } catch (err) {
+      console.error('Error loading images:', err);
+    } finally {
+      setLoadingImages(false);
+    }
+  };
 
   // Create and cleanup object URLs when files change
   useEffect(() => {
@@ -73,7 +99,14 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   const handleUploadClick = async () => {
     if (previewFiles.length === 0) return;
 
-    const results = await handleUpload(previewFiles, { tipo, itemId });
+    // Only set first uploaded file as principal if no images exist yet
+    const shouldSetAsPrincipal = markAsPrincipal && itemImages.length === 0 && previewFiles.length === 1;
+
+    const results = await handleUpload(previewFiles, { 
+      tipo, 
+      itemId,
+      e_principal: shouldSetAsPrincipal
+    });
     
     if (onUploadComplete && results.length > 0) {
       onUploadComplete(results);
@@ -81,10 +114,38 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     
     // Clear preview files after successful upload
     setPreviewFiles([]);
+    setMarkAsPrincipal(false);
+    
+    // Reload images from backend
+    if (tipo === 'item' && itemId) {
+      await loadItemImages();
+    }
   };
 
   const handleDeleteImage = async (filename: string) => {
     await handleDelete(filename);
+  };
+
+  const handleDeleteItemImage = async (imagemId: number) => {
+    if (!itemId) return;
+    
+    try {
+      await deleteItemImagem(itemId, imagemId);
+      await loadItemImages();
+    } catch (err) {
+      console.error('Error deleting image:', err);
+    }
+  };
+
+  const handleSetPrincipal = async (imagemId: number) => {
+    if (!itemId) return;
+    
+    try {
+      await setImagemPrincipal(itemId, imagemId);
+      await loadItemImages();
+    } catch (err) {
+      console.error('Error setting principal image:', err);
+    }
   };
 
   const allImages = [
@@ -140,14 +201,29 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             <h3 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200">
               Arquivos Selecionados ({previewFiles.length})
             </h3>
-            <Button
-              variant="primary"
-              onClick={handleUploadClick}
-              loading={isUploading}
-              disabled={isUploading}
-            >
-              {isUploading ? 'Enviando...' : `Enviar ${previewFiles.length} ${previewFiles.length === 1 ? 'arquivo' : 'arquivos'}`}
-            </Button>
+            <div className="flex items-center gap-4">
+              {tipo === 'item' && itemImages.length === 0 && previewFiles.length === 1 && (
+                <label className="flex items-center space-x-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={markAsPrincipal}
+                    onChange={(e) => setMarkAsPrincipal(e.target.checked)}
+                    className="w-4 h-4 rounded border-neutral-300 text-gremio-celeste focus:ring-gremio-celeste"
+                  />
+                  <span className="text-neutral-700 dark:text-neutral-300">
+                    Definir como principal
+                  </span>
+                </label>
+              )}
+              <Button
+                variant="primary"
+                onClick={handleUploadClick}
+                loading={isUploading}
+                disabled={isUploading}
+              >
+                {isUploading ? 'Enviando...' : `Enviar ${previewFiles.length} ${previewFiles.length === 1 ? 'arquivo' : 'arquivos'}`}
+              </Button>
+            </div>
           </div>
 
           {/* Progress Bar */}
@@ -189,8 +265,40 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
         </div>
       )}
 
-      {/* Uploaded Images Gallery */}
-      {allImages.length > 0 && (
+      {/* Uploaded Images Gallery - Show item images from backend */}
+      {tipo === 'item' && itemImages.length > 0 && (
+        <div className="uploaded-section">
+          <h3 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-4">
+            Imagens do Item ({itemImages.length})
+          </h3>
+          <div className="uploaded-grid">
+            {itemImages.map((imagem) => (
+              <div key={imagem.id} className="relative">
+                <ImagePreview
+                  url={imagem.url_blob}
+                  filename={imagem.nome_arquivo || 'Imagem'}
+                  size={imagem.tamanho_bytes}
+                  onDelete={() => handleDeleteItemImage(imagem.id)}
+                />
+                <button 
+                  onClick={() => handleSetPrincipal(imagem.id)}
+                  className={`absolute top-2 left-2 p-2 rounded-full shadow-lg transition-colors ${
+                    imagem.e_principal 
+                      ? 'bg-yellow-500 text-white' 
+                      : 'bg-white dark:bg-neutral-800 text-neutral-400 hover:text-yellow-500'
+                  }`}
+                  title={imagem.e_principal ? 'Imagem principal' : 'Definir como principal'}
+                >
+                  <Star className="w-5 h-5" fill={imagem.e_principal ? 'currentColor' : 'none'} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded Images Gallery - For non-item uploads or fallback */}
+      {tipo !== 'item' && allImages.length > 0 && (
         <div className="uploaded-section">
           <h3 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-4">
             Imagens Enviadas ({allImages.length})

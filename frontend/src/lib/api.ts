@@ -146,3 +146,13 @@ export const togglePlanoAtivo = (id: number) => api.patch(`/platform/planos/${id
 // Platform - Metricas
 export const getAdminMetricas = () => api.get('/platform/metricas');
 
+// Imagens de itens
+export const getItemImagens = (itemId: number) => 
+  api.get(`/itens/${itemId}/imagens`);
+
+export const setImagemPrincipal = (itemId: number, imagemId: number) => 
+  api.patch(`/itens/${itemId}/imagens/${imagemId}/principal`);
+
+export const deleteItemImagem = (itemId: number, imagemId: number) => 
+  api.delete(`/itens/${itemId}/imagens/${imagemId}`);
+

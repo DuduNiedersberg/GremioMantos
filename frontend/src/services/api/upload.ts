@@ -13,6 +13,7 @@ export interface UploadResponse {
 export interface UploadOptions {
   itemId?: number;
   tipo: 'item' | 'logo_tenant' | 'avatar_usuario';
+  e_principal?: boolean;
   onProgress?: (progress: number) => void;
 }
 
@@ -29,6 +30,10 @@ export async function uploadImage(
   }
   
   formData.append('tipo', options.tipo);
+  
+  if (options.e_principal !== undefined) {
+    formData.append('e_principal', options.e_principal ? '1' : '0');
+  }
 
   const response = await axios.post<UploadResponse>(
     `${API_BASE_URL}/upload`,

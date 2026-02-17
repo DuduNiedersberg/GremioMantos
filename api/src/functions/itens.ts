@@ -46,14 +46,17 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
 
       const query = `
         SELECT 
-          id, tipo, nome, ano, modelo, marca, jogador, 
-          numero_camisa, tamanho, cor_principal, condicao, 
-          autografada, autografo_descricao, valor_compra, valor_venda, 
-          lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
-          observacoes, criado_em, atualizado_em, lote_id, valor_mercado
-        FROM itens 
+          i.id, i.tipo, i.nome, i.ano, i.modelo, i.marca, i.jogador, 
+          i.numero_camisa, i.tamanho, i.cor_principal, i.condicao, 
+          i.autografada, i.autografo_descricao, i.valor_compra, i.valor_venda, 
+          i.lucro_calculado, i.situacao, i.destino, i.data_aquisicao, i.data_saida, 
+          i.observacoes, i.criado_em, i.atualizado_em, i.lote_id, i.valor_mercado,
+          img.url_blob as imagem_principal_url,
+          img.thumbnail_url as imagem_principal_thumbnail
+        FROM itens i
+        LEFT JOIN imagens img ON img.item_id = i.id AND img.e_principal = 1
         ${whereClause}
-        ORDER BY criado_em DESC
+        ORDER BY i.criado_em DESC
         OFFSET ${offset} ROWS FETCH NEXT ${perPage} ROWS ONLY
       `;
       
@@ -86,12 +89,15 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
 
       const query = `
         SELECT 
-          id, tipo, nome, ano, modelo, marca, jogador, 
-          numero_camisa, tamanho, cor_principal, condicao, 
-          autografada, autografo_descricao, valor_compra, valor_venda, 
-          lucro_calculado, situacao, destino, data_aquisicao, data_saida, 
-          observacoes, criado_em, atualizado_em, lote_id, valor_mercado
-        FROM itens 
+          i.id, i.tipo, i.nome, i.ano, i.modelo, i.marca, i.jogador, 
+          i.numero_camisa, i.tamanho, i.cor_principal, i.condicao, 
+          i.autografada, i.autografo_descricao, i.valor_compra, i.valor_venda, 
+          i.lucro_calculado, i.situacao, i.destino, i.data_aquisicao, i.data_saida, 
+          i.observacoes, i.criado_em, i.atualizado_em, i.lote_id, i.valor_mercado,
+          img.url_blob as imagem_principal_url,
+          img.thumbnail_url as imagem_principal_thumbnail
+        FROM itens i
+        LEFT JOIN imagens img ON img.item_id = i.id AND img.e_principal = 1
         ${whereClause}
       `;
       const result = await executeQuery<any>(query, params);
@@ -100,10 +106,21 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
         return successResponse({ error: 'Item não encontrado' }, 404, origin);
       }
 
+      // Get all images for the item
+      const imagensQuery = `
+        SELECT id, item_id, url_blob, thumbnail_url, nome_arquivo, 
+               tamanho_bytes, tipo_mime, e_principal, uploaded_em
+        FROM imagens
+        WHERE item_id = @id
+        ORDER BY e_principal DESC, uploaded_em DESC
+      `;
+      const imagensResult = await executeQuery<any>(imagensQuery, { id });
+
       // Map numero_camisa to numero for API compatibility
       const item = {
         ...result.recordset[0],
         numero: result.recordset[0].numero_camisa,
+        imagens: imagensResult.recordset,
       };
 
       return successResponse(item, 200, origin);

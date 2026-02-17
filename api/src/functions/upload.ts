@@ -110,6 +110,7 @@ async function uploadHandler(
     // Extract fields
     const itemId = fields.item_id ? parseInt(fields.item_id, 10) : null;
     const tipo = fields.tipo || 'item';
+    const ePrincipal = fields.e_principal === 'true' || fields.e_principal === '1';
 
     // Use tenant ID from JWT
     const tenantId = user.tenantId;
@@ -141,16 +142,25 @@ async function uploadHandler(
 
     // Handle different upload types
     if (tipo === 'item' && itemId) {
+      // If this should be the principal image, clear other principal flags first
+      if (ePrincipal) {
+        await executeQuery(
+          'UPDATE imagens SET e_principal = 0 WHERE item_id = @item_id',
+          { item_id: itemId }
+        );
+      }
+
       // Save reference in imagens table
       await executeQuery(
-        `INSERT INTO imagens (item_id, url_blob, nome_arquivo, tamanho_bytes, tipo_mime, uploaded_em)
-         VALUES (@item_id, @url, @filename, @size, @contentType, GETDATE())`,
+        `INSERT INTO imagens (item_id, url_blob, nome_arquivo, tamanho_bytes, tipo_mime, e_principal, uploaded_em)
+         VALUES (@item_id, @url, @filename, @size, @contentType, @e_principal, GETDATE())`,
         {
           item_id: itemId,
           url: uploadResult.url,
           filename: uploadResult.filename,
           size: uploadResult.size,
           contentType: uploadResult.contentType,
+          e_principal: ePrincipal ? 1 : 0,
         }
       );
     } else if (tipo === 'logo_tenant') {

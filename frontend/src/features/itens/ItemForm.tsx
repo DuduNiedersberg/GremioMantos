@@ -109,12 +109,14 @@ export default function ItemForm() {
       if (isEditing && id) {
         await updateItem(parseInt(id), dataToSave);
         success('Item atualizado com sucesso!');
+        navigate('/itens');
       } else {
-        await createItem(dataToSave);
-        success('Item criado com sucesso!');
+        const response = await createItem(dataToSave);
+        const novoItemId = response.data.data.id;
+        success('Item criado! Agora adicione fotos.');
+        // Redirect to edit page to allow adding images
+        navigate(`/itens/${novoItemId}/editar`);
       }
-      
-      navigate('/itens');
     } catch (err: any) {
       showError(err.response?.data?.error || 'Erro ao salvar item');
       console.error(err);
