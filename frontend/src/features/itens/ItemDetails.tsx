@@ -26,6 +26,7 @@ export default function ItemDetails() {
   useEffect(() => {
     if (id) {
       loadItem(parseInt(id));
+      setSelectedImageUrl(null); // Reset selected image when item changes
     }
   }, [id]);
 
@@ -138,12 +139,25 @@ export default function ItemDetails() {
                 src={selectedImageUrl || item.imagem_principal_url} 
                 alt={item.nome}
                 className="w-full h-full object-cover cursor-pointer"
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   if (item.imagens && item.imagens.length > 0) {
                     const currentIndex = selectedImageUrl 
                       ? item.imagens.findIndex(img => img.url_blob === selectedImageUrl)
                       : item.imagens.findIndex(img => img.e_principal);
                     openLightbox(currentIndex >= 0 ? currentIndex : 0);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (item.imagens && item.imagens.length > 0) {
+                      const currentIndex = selectedImageUrl 
+                        ? item.imagens.findIndex(img => img.url_blob === selectedImageUrl)
+                        : item.imagens.findIndex(img => img.e_principal);
+                      openLightbox(currentIndex >= 0 ? currentIndex : 0);
+                    }
                   }
                 }}
               />
@@ -371,6 +385,7 @@ export default function ItemDetails() {
           <button
             onClick={() => setShowLightbox(false)}
             className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+            aria-label="Close lightbox"
           >
             <X className="w-8 h-8" />
           </button>
@@ -384,6 +399,7 @@ export default function ItemDetails() {
                   setLightboxIndex((prev) => (prev - 1 + item.imagens!.length) % item.imagens!.length);
                 }}
                 className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Previous image"
               >
                 <ChevronLeft className="w-8 h-8" />
               </button>
@@ -393,6 +409,7 @@ export default function ItemDetails() {
                   setLightboxIndex((prev) => (prev + 1) % item.imagens!.length);
                 }}
                 className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Next image"
               >
                 <ChevronRight className="w-8 h-8" />
               </button>
