@@ -10,15 +10,15 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'api' # ✅ MUDA DE '.' PARA 'api'
-  NODE_VERSION: '20.x'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
+  NODE_VERSION: '20.x' # set this to the node version to use (supports 8.x, 10.x, 12.x)
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
-
+      contents: read #This is required for actions/checkout
+      
     steps:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@v4
@@ -41,27 +41,27 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          path: .
 
   deploy:
     runs-on: windows-latest
     needs: build
     permissions:
-      id-token: write
-      contents: read
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: node-app
-
+      
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_854C29EACFA44F1E8395B6177A553D75 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_B42162C5B83D48BCB2BC9AF22E57127A }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_29A3443071794A47AB7DB0240F102AD3 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_F3F14330CE5343549D5543A88DE64CED }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_C0F8C11793524BD59066803B47E3C0B9 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_58DE80C9978048B9BFD3E0DF01791719 }}
 
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1
@@ -69,4 +69,5 @@ jobs:
         with:
           app-name: 'gremiomantosapi'
           slot-name: 'Production'
-          package: '.' # ✅ Artifact já está na raiz após download
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          
