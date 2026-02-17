@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { getItens, deleteItem } from '../../lib/api';
 import { Item } from '../../types';
 import { formatCurrency } from '../../shared/utils/formatters';
-import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight, Shirt } from 'lucide-react';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
@@ -127,8 +127,16 @@ export default function ItemList() {
         {filteredItems.map((item) => (
           <div key={item.id} className="card hover:shadow-lg transition-shadow">
             <Link to={`/itens/${item.id}`}>
-              <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 rounded-lg mb-4 flex items-center justify-center">
-                <span className="text-6xl">👕</span>
+              <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                {item.imagem_principal_url ? (
+                  <img 
+                    src={item.imagem_principal_thumbnail || item.imagem_principal_url} 
+                    alt={item.nome}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Shirt className="w-16 h-16 text-neutral-400" />
+                )}
               </div>
               <h3 className="font-bold text-lg mb-2 line-clamp-1">{item.nome}</h3>
               <div className="space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
