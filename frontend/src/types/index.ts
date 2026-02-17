@@ -2,6 +2,18 @@
 // TYPE DEFINITIONS - Frontend
 // =============================================================================
 
+export interface ImagemItem {
+  id: number;
+  item_id: number;
+  url_blob: string;
+  thumbnail_url?: string;
+  nome_arquivo?: string;
+  tamanho_bytes?: number;
+  tipo_mime?: string;
+  e_principal: boolean;
+  uploaded_em: string;
+}
+
 export interface Item {
   id: number;
   tipo?: string;
@@ -29,6 +41,9 @@ export interface Item {
   observacoes?: string;
   criado_em: string;
   atualizado_em: string;
+  imagem_principal_url?: string;
+  imagem_principal_thumbnail?: string;
+  imagens?: ImagemItem[];
 }
 
 export interface Lote {
