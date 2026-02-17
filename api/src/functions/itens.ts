@@ -24,23 +24,23 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
       const params: Record<string, any> = {};
 
       if (user.tipo !== 'platform_admin') {
-        whereClause += ' AND tenant_id = @tenant_id';
+        whereClause += ' AND i.tenant_id = @tenant_id';
         params.tenant_id = user.tenantId;
       }
 
       if (situacao) {
-        whereClause += ' AND situacao = @situacao';
+        whereClause += ' AND i.situacao = @situacao';
         params.situacao = situacao;
       }
 
       if (search) {
-        whereClause += ' AND (nome LIKE @search OR jogador LIKE @search OR marca LIKE @search)';
+        whereClause += ' AND (i.nome LIKE @search OR i.jogador LIKE @search OR i.marca LIKE @search)';
         params.search = `%${search}%`;
       }
 
       const offset = (page - 1) * perPage;
       
-      const countQuery = `SELECT COUNT(*) as total FROM itens ${whereClause}`;
+      const countQuery = `SELECT COUNT(*) as total FROM itens i ${whereClause}`;
       const countResult = await executeQuery<{ total: number }>(countQuery, params);
       const total = countResult.recordset[0].total;
 
@@ -79,11 +79,11 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
 
     // GET /api/itens/{id} - Get single item
     if (method === 'GET' && id) {
-      let whereClause = 'WHERE id = @id';
+      let whereClause = 'WHERE i.id = @id';
       const params: Record<string, any> = { id };
 
       if (user.tipo !== 'platform_admin') {
-        whereClause += ' AND tenant_id = @tenant_id';
+        whereClause += ' AND i.tenant_id = @tenant_id';
         params.tenant_id = user.tenantId;
       }
 
