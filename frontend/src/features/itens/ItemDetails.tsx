@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, QrCode, Shirt } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, QrCode, Shirt, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getItem, deleteItem } from '../../lib/api';
 import { Item } from '../../types';
 import { formatCurrency, formatDate } from '../../shared/utils/formatters';
@@ -19,10 +19,14 @@ export default function ItemDetails() {
   const [showQRCode, setShowQRCode] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [showLightbox, setShowLightbox] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
     if (id) {
       loadItem(parseInt(id));
+      setSelectedImageUrl(null); // Reset selected image when item changes
     }
   }, [id]);
 
@@ -56,6 +60,28 @@ export default function ItemDetails() {
       setShowDeleteModal(false);
     }
   };
+
+  const openLightbox = (index: number) => {
+    setLightboxIndex(index);
+    setShowLightbox(true);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!showLightbox || !item?.imagens) return;
+      
+      if (e.key === 'Escape') {
+        setShowLightbox(false);
+      } else if (e.key === 'ArrowLeft') {
+        setLightboxIndex((prev) => (prev - 1 + item.imagens!.length) % item.imagens!.length);
+      } else if (e.key === 'ArrowRight') {
+        setLightboxIndex((prev) => (prev + 1) % item.imagens!.length);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showLightbox, item?.imagens]);
 
   if (loading) {
     return <LoadingSkeleton />;
@@ -108,11 +134,32 @@ export default function ItemDetails() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card">
           <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 rounded-lg flex items-center justify-center overflow-hidden">
-            {item.imagem_principal_url ? (
+            {item.imagem_principal_url || selectedImageUrl ? (
               <img 
-                src={item.imagem_principal_url} 
+                src={selectedImageUrl || item.imagem_principal_url} 
                 alt={item.nome}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (item.imagens && item.imagens.length > 0) {
+                    const currentIndex = selectedImageUrl 
+                      ? item.imagens.findIndex(img => img.url_blob === selectedImageUrl)
+                      : item.imagens.findIndex(img => img.e_principal);
+                    openLightbox(currentIndex >= 0 ? currentIndex : 0);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (item.imagens && item.imagens.length > 0) {
+                      const currentIndex = selectedImageUrl 
+                        ? item.imagens.findIndex(img => img.url_blob === selectedImageUrl)
+                        : item.imagens.findIndex(img => img.e_principal);
+                      openLightbox(currentIndex >= 0 ? currentIndex : 0);
+                    }
+                  }
+                }}
               />
             ) : (
               <Shirt className="w-24 h-24 text-neutral-400" />
@@ -125,10 +172,10 @@ export default function ItemDetails() {
               {item.imagens.map((img, index) => (
                 <button
                   key={img.id}
-                  onClick={() => {/* Futuramente: trocar imagem principal exibida */}}
-                  className={`aspect-square rounded-lg overflow-hidden border-2 ${
-                    img.e_principal 
-                      ? 'border-yellow-500' 
+                  onClick={() => setSelectedImageUrl(img.url_blob)}
+                  className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                    (selectedImageUrl === img.url_blob || (!selectedImageUrl && img.e_principal))
+                      ? 'border-yellow-500 ring-2 ring-yellow-500/50' 
                       : 'border-transparent hover:border-gremio-celeste'
                   }`}
                 >
@@ -325,6 +372,61 @@ export default function ItemDetails() {
                 Excluir
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal */}
+      {showLightbox && item.imagens && item.imagens.length > 0 && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setShowLightbox(false)}
+        >
+          <button
+            onClick={() => setShowLightbox(false)}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+            aria-label="Close lightbox"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          
+          {/* Navigation arrows */}
+          {item.imagens.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) => (prev - 1 + item.imagens!.length) % item.imagens!.length);
+                }}
+                className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="w-8 h-8" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) => (prev + 1) % item.imagens!.length);
+                }}
+                className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Next image"
+              >
+                <ChevronRight className="w-8 h-8" />
+              </button>
+            </>
+          )}
+          
+          {/* Main image */}
+          <img
+            src={item.imagens[lightboxIndex].url_blob}
+            alt={`${item.nome} - Imagem ${lightboxIndex + 1}`}
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          
+          {/* Counter */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white bg-black/50 px-4 py-2 rounded-full">
+            {lightboxIndex + 1} / {item.imagens.length}
           </div>
         </div>
       )}
