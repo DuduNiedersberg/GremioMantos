@@ -122,7 +122,7 @@ export default function ItemDetails() {
           {/* Galeria de imagens */}
           {item.imagens && item.imagens.length > 1 && (
             <div className="grid grid-cols-4 gap-2 mt-4">
-              {item.imagens.map((img) => (
+              {item.imagens.map((img, index) => (
                 <button
                   key={img.id}
                   onClick={() => {/* Futuramente: trocar imagem principal exibida */}}
@@ -134,7 +134,7 @@ export default function ItemDetails() {
                 >
                   <img 
                     src={img.thumbnail_url || img.url_blob}
-                    alt=""
+                    alt={`${item.nome} - Imagem ${index + 1}`}
                     className="w-full h-full object-cover"
                   />
                 </button>
