@@ -38,7 +38,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [itemImages, setItemImages] = useState<ImagemItem[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
-  const [setPrincipalAsDefault, setSetPrincipalAsDefault] = useState(false);
+  const [markAsPrincipal, setMarkAsPrincipal] = useState(false);
 
   // Load images from backend if itemId is provided
   useEffect(() => {
@@ -99,10 +99,13 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   const handleUploadClick = async () => {
     if (previewFiles.length === 0) return;
 
+    // Only set first uploaded file as principal if no images exist yet
+    const shouldSetAsPrincipal = markAsPrincipal && itemImages.length === 0 && previewFiles.length === 1;
+
     const results = await handleUpload(previewFiles, { 
       tipo, 
       itemId,
-      e_principal: setPrincipalAsDefault && itemImages.length === 0 // Only set as principal if no images exist
+      e_principal: shouldSetAsPrincipal
     });
     
     if (onUploadComplete && results.length > 0) {
@@ -111,7 +114,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     
     // Clear preview files after successful upload
     setPreviewFiles([]);
-    setSetPrincipalAsDefault(false);
+    setMarkAsPrincipal(false);
     
     // Reload images from backend
     if (tipo === 'item' && itemId) {
@@ -199,12 +202,12 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
               Arquivos Selecionados ({previewFiles.length})
             </h3>
             <div className="flex items-center gap-4">
-              {tipo === 'item' && itemImages.length === 0 && (
+              {tipo === 'item' && itemImages.length === 0 && previewFiles.length === 1 && (
                 <label className="flex items-center space-x-2 cursor-pointer text-sm">
                   <input
                     type="checkbox"
-                    checked={setPrincipalAsDefault}
-                    onChange={(e) => setSetPrincipalAsDefault(e.target.checked)}
+                    checked={markAsPrincipal}
+                    onChange={(e) => setMarkAsPrincipal(e.target.checked)}
                     className="w-4 h-4 rounded border-neutral-300 text-gremio-celeste focus:ring-gremio-celeste"
                   />
                   <span className="text-neutral-700 dark:text-neutral-300">
