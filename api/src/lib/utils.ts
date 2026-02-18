@@ -74,27 +74,54 @@ export const clienteSchema = z.object({
 });
 
 export const itemSchema = z.object({
-  tipo: z.enum(['camiseta', 'jaqueta', 'colete', 'treino', 'livro', 'outro']).default('camiseta').nullish(),
-  nome: z.string().nullish(), // Deixando nullish para máxima flexibilidade
+  // tipo: aceitar string vazia e converter para 'camiseta' (default)
+  tipo: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? 'camiseta' : val,
+    z.enum(['camiseta', 'jaqueta', 'colete', 'treino', 'livro', 'outro'])
+  ),
+  nome: z.string().nullish(),
   ano: z.number().int().min(1900).max(2100).nullish(),
   modelo: z.string().nullish(),
   marca: z.string().nullish(),
   jogador: z.string().nullish(),
-  numero: z.number().int().min(0).max(99).nullish(), // Mapeado para numero_camisa
+  // numero: aceitar string e converter para number
+  numero: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : (typeof val === 'string' ? parseInt(val, 10) : val),
+    z.number().int().min(0).max(99).nullish()
+  ),
   tamanho: z.string().nullish(),
   cor_principal: z.string().nullish(),
-  condicao: z.enum(['nova', 'seminova', 'usada', 'vintage']).nullish(),
+  condicao: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : val,
+    z.enum(['nova', 'seminova', 'usada', 'vintage']).nullish()
+  ),
   autografada: z.boolean().nullish(),
   autografo_descricao: z.string().nullish(),
-  valor_compra: z.number().min(0).default(0).nullish(),
-  valor_venda: z.number().min(0).nullish(),
-  situacao: z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque').nullish(),
+  valor_compra: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? 0 : (typeof val === 'string' ? parseFloat(val) : val),
+    z.number().min(0).default(0)
+  ),
+  valor_venda: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : (typeof val === 'string' ? parseFloat(val) : val),
+    z.number().min(0).nullish()
+  ),
+  situacao: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? 'estoque' : val,
+    z.enum(['estoque', 'vendida', 'trocada', 'baixada_colecao']).default('estoque')
+  ),
   destino: z.string().nullish(),
   data_aquisicao: z.string().nullish(),
   data_saida: z.string().nullish(),
   observacoes: z.string().nullish(),
-  lote_id: z.number().int().nullish(),
-  valor_mercado: z.number().min(0).nullish(),
+  // lote_id: aceitar string e converter para number
+  lote_id: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : (typeof val === 'string' ? parseInt(val, 10) : val),
+    z.number().int().nullish()
+  ),
+  valor_mercado: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : (typeof val === 'string' ? parseFloat(val) : val),
+    z.number().min(0).nullish()
+  ),
   tenant_id: z.number().int().positive().optional(),
 });
 
