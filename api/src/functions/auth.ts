@@ -87,7 +87,7 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
         OUTPUT INSERTED.id
         VALUES (@nome, @slug, 1, 1, @nome, @plano_id)
       `)
-
+       const tenantId = tenantResult.recordset[0].id
     // Inserir usuário com o tenant criado
     const result = await pool
       .request()
