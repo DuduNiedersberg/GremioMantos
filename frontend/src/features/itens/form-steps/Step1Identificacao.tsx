@@ -26,7 +26,7 @@ export default function Step1Identificacao({ formData, onChange }: Step1Props) {
         onChange={onChange}
         placeholder="Ex: Camiseta 2023 - Suárez #9"
         required
-        helperText="Será preenchido automaticamente com base nos campos preenchidos"
+        helperText="Preenchido automaticamente com base no ano, jogador e número (Step 2) — edite livremente"
       />
       <Input
         label="Ano"

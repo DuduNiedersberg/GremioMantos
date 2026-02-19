@@ -55,6 +55,9 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
     
     let slugFinal = slugBase
     let sufixo = 1
+    // Limit to 100 attempts to avoid infinite loops on very busy namespaces.
+    // If all 100 suffixes are taken the insert will propagate a DB unique-constraint
+    // error which is an acceptable fail-fast signal to the caller.
     const MAX_SLUG_ATTEMPTS = 100
     while (sufixo <= MAX_SLUG_ATTEMPTS) {
       const slugCheck = await pool

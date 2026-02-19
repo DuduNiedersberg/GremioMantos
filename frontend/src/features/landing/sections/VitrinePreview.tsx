@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Shirt } from 'lucide-react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api';
+import { API_URL } from '../../../lib/api';
 
 interface VitrineItem {
   id: number;

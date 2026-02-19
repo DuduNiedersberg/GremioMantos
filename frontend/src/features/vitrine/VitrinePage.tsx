@@ -5,10 +5,7 @@ import { Shirt, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import VitrineItemCard from './VitrineItemCard';
 import VitrineFilters from './VitrineFilters';
 import VitrineItemModal from './VitrineItemModal';
-
-const API_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  'https://gremiomantosapi-d6gshveqc4fee0c2.brazilsouth-01.azurewebsites.net/api';
+import { API_URL } from '../../lib/api';
 
 interface VitrineItem {
   id: number;
