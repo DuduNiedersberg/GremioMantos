@@ -191,16 +191,17 @@ async function vitrinePorSlug(request: HttpRequest, context: InvocationContext):
 // ============================================================================
 // REGISTRAR ROTAS NO AZURE FUNCTIONS
 // ============================================================================
-app.http('vitrinePreview', {
-  methods: ['GET', 'OPTIONS'],
-  route: 'vitrine/preview',
-  authLevel: 'anonymous',
-  handler: vitrinePreview
-})
-
-app.http('vitrinePorSlug', {
+app.http('vitrinePublica', {
   methods: ['GET', 'OPTIONS'],
   route: 'vitrine/{slug}',
   authLevel: 'anonymous',
-  handler: vitrinePorSlug
+  handler: async (request, context) => {
+    const slug = request.params.slug;
+    
+    if (slug === 'preview') {
+      return vitrinePreview(request, context);   // ← despacha pro handler certo
+    }
+    
+    return vitrinePorSlug(request, context);     // ← slug real de tenant
+  }
 })
