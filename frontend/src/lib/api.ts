@@ -156,3 +156,8 @@ export const setImagemPrincipal = (itemId: number, imagemId: number) =>
 export const deleteItemImagem = (itemId: number, imagemId: number) => 
   api.delete(`/itens/${itemId}/imagens/${imagemId}`);
 
+// Vitrine Pública (no auth needed - use axios directly in components)
+export const getVitrinePreview = () => api.get('/vitrine/preview');
+export const getVitrinePorSlug = (slug: string, params?: any) => api.get(`/vitrine/${slug}`, { params });
+export const publicarItemVitrine = (itemId: number, data: { publicado: boolean; ordem?: number }) => api.patch(`/itens/${itemId}/publicar`, data);
+
