@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getItens, deleteItem } from '../../lib/api';
+import { getItens, deleteItem, publicarItemVitrine } from '../../lib/api';
 import { Item } from '../../types';
 import { formatCurrency } from '../../shared/utils/formatters';
-import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight, Shirt } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight, Shirt, Eye, EyeOff } from 'lucide-react';
 import Button from '../../shared/components/Button';
 import Input from '../../shared/components/Input';
 import Select from '../../shared/components/Select';
@@ -62,6 +62,19 @@ export default function ItemList() {
       console.error(err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleToggleVitrine = async (item: Item, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const novoEstado = !item.publicado_vitrine;
+      await publicarItemVitrine(item.id, { publicado: novoEstado });
+      success(novoEstado ? 'Item publicado na vitrine!' : 'Item removido da vitrine');
+      loadItems();
+    } catch (err: any) {
+      showError(err.response?.data?.error || 'Erro ao alterar vitrine');
     }
   };
 
@@ -155,11 +168,28 @@ export default function ItemList() {
                   <span className={`badge ${situacaoColors[item.situacao] || 'bg-neutral-100 text-neutral-800'}`}>
                     {item.situacao}
                   </span>
+                  {item.publicado_vitrine && (
+                    <span className="badge bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 ml-1">
+                      Na Vitrine
+                    </span>
+                  )}
                 </div>
               </div>
             </Link>
             {/* Actions */}
             <div className="flex justify-end space-x-2 mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => handleToggleVitrine(item, e)}
+                title={item.publicado_vitrine ? 'Remover da vitrine' : 'Publicar na vitrine'}
+              >
+                {item.publicado_vitrine ? (
+                  <Eye className="w-4 h-4 text-green-500" />
+                ) : (
+                  <EyeOff className="w-4 h-4 text-neutral-400" />
+                )}
+              </Button>
               <Link to={`/itens/${item.id}/editar`}>
                 <Button variant="ghost" size="sm">
                   <Edit className="w-4 h-4" />
