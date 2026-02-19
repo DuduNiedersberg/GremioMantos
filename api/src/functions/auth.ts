@@ -68,19 +68,25 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
       sufixo++
       slugFinal = `${slugBase}-${sufixo}`
     }
+ const planoFree = await pool
+      .request()
+      .query("SELECT TOP 1 id FROM planos WHERE codigo = 'free' AND ativo = 1 ORDER BY id")
 
-    // Criar tenant automaticamente
+    const planoId = planoFree.recordset.length > 0
+      ? planoFree.recordset[0].id
+      : 1  // fallback para ID 1 se não encontrar
+
+    // Criar tenant automaticamente com plano free
     const tenantResult = await pool
       .request()
       .input('nome', sql.NVarChar, nomeParaSlug)
       .input('slug', sql.VarChar, slugFinal)
+      .input('plano_id', sql.Int, planoId)
       .query(`
-        INSERT INTO tenants (nome, slug, ativo, vitrine_ativa, vitrine_titulo)
+        INSERT INTO tenants (nome, slug, ativo, vitrine_ativa, vitrine_titulo, plano_id)
         OUTPUT INSERTED.id
-        VALUES (@nome, @slug, 1, 1, @nome)
+        VALUES (@nome, @slug, 1, 1, @nome, @plano_id)
       `)
-
-    const tenantId = tenantResult.recordset[0].id
 
     // Inserir usuário com o tenant criado
     const result = await pool
