@@ -314,6 +314,14 @@ export const senhaSchema = z.string()
   .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Deve ter ao menos 1 caractere especial')
 
 // --- USUARIOS ---
+export function gerarSlug(nome: string): string {
+  return nome
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 export const usuarioCreateSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
   email: emailSchema,
@@ -322,7 +330,8 @@ export const usuarioCreateSchema = z.object({
   provider: AuthProviderEnum.default('local'),
   provider_id: z.string().optional(),
   tipo: UsuarioTipoEnum.default('colecionador'),
-  tenant_id: z.number().int().positive().nullable().optional()
+  tenant_id: z.number().int().positive().nullable().optional(),
+  nome_loja: z.string().optional(),
 }).refine(
   (data) => data.provider !== 'local' || data.senha,
   { message: 'Senha é obrigatória para autenticação local', path: ['senha'] }
