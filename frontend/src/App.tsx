@@ -2,7 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './shared/components/Layout';
 import AdminRoute from './shared/components/AdminRoute';
+import LandingPage from './features/landing/LandingPage';
 import LoginPage from './features/auth/LoginPage';
+import RegisterPage from './features/auth/RegisterPage';
+import VitrinePage from './features/vitrine/VitrinePage';
 import Dashboard from './features/dashboard/Dashboard';
 import ItemList from './features/itens/ItemList';
 import ItemDetails from './features/itens/ItemDetails';
@@ -51,12 +54,16 @@ function App() {
     <BrowserRouter basename="/GremioMantos">
       <AuthProvider>
         <Routes>
-          {/* Public route */}
+          {/* Public routes */}
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
-          
+          <Route path="/cadastro" element={<RegisterPage />} />
+          <Route path="/vitrine" element={<VitrinePage />} />
+          <Route path="/vitrine/:slug" element={<VitrinePage />} />
+
           {/* Protected routes */}
-          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<Dashboard />} />
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="dashboard" element={<Dashboard />} />
             
             {/* Items */}
             <Route path="itens" element={<ItemList />} />
@@ -90,7 +97,7 @@ function App() {
             <Route path="platform/planos" element={<AdminRoute platformOnly><PlanosList /></AdminRoute>} />
             
             {/* 404 */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>
       </AuthProvider>

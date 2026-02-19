@@ -6,7 +6,8 @@ import {
   hashPassword,
   verifyPassword,
   generateToken,
-  verifyToken
+  verifyToken,
+  gerarSlug
 } from '../lib/utils'
 import { getConnection } from '../lib/database'
 
@@ -47,7 +48,41 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
       senhaHash = await hashPassword(data.senha)
     }
 
-    // Inserir usuário
+    // Gerar slug único para o tenant
+    const nomeParaSlug = data.nome_loja || data.nome
+    let slugBase = gerarSlug(nomeParaSlug)
+    if (!slugBase) slugBase = 'usuario'
+    
+    let slugFinal = slugBase
+    let sufixo = 1
+    // Limit to 100 attempts to avoid infinite loops on very busy namespaces.
+    // If all 100 suffixes are taken the insert will propagate a DB unique-constraint
+    // error which is an acceptable fail-fast signal to the caller.
+    const MAX_SLUG_ATTEMPTS = 100
+    while (sufixo <= MAX_SLUG_ATTEMPTS) {
+      const slugCheck = await pool
+        .request()
+        .input('slug', sql.VarChar, slugFinal)
+        .query('SELECT id FROM tenants WHERE slug = @slug')
+      if (slugCheck.recordset.length === 0) break
+      sufixo++
+      slugFinal = `${slugBase}-${sufixo}`
+    }
+
+    // Criar tenant automaticamente
+    const tenantResult = await pool
+      .request()
+      .input('nome', sql.NVarChar, nomeParaSlug)
+      .input('slug', sql.VarChar, slugFinal)
+      .query(`
+        INSERT INTO tenants (nome, slug, ativo, vitrine_ativa, vitrine_titulo)
+        OUTPUT INSERTED.id
+        VALUES (@nome, @slug, 1, 1, @nome)
+      `)
+
+    const tenantId = tenantResult.recordset[0].id
+
+    // Inserir usuário com o tenant criado
     const result = await pool
       .request()
       .input('nome', sql.NVarChar, data.nome)
@@ -57,7 +92,7 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
       .input('provider', sql.VarChar, data.provider)
       .input('provider_id', sql.NVarChar, data.provider_id || null)
       .input('tipo', sql.VarChar, data.tipo)
-      .input('tenant_id', sql.Int, data.tenant_id || null)
+      .input('tenant_id', sql.Int, tenantId)
       .query(`
         INSERT INTO usuarios (nome, email, telefone, senha_hash, provider, provider_id, tipo, tenant_id, ativo, email_verificado)
         OUTPUT INSERTED.id, INSERTED.nome, INSERTED.email, INSERTED.tipo, INSERTED.tenant_id

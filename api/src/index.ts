@@ -24,8 +24,7 @@ import './functions/admin-planos';
 import './functions/admin-tenants';
 import './functions/admin-usuarios';
 import './functions/upload';
-
-
-
-
+import './functions/item-imagens';
+import './functions/vitrine-publica';
+import './functions/vitrine-admin';
 

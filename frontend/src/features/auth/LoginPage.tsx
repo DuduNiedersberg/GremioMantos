@@ -24,7 +24,7 @@ const LoginPage: React.FC = () => {
     try {
       await login(email, senha);
       toast.success('Login realizado com sucesso!');
-      navigate('/');
+      navigate('/dashboard');
     } catch (error: any) {
       toast.error(error.message || 'Erro ao fazer login');
     } finally {

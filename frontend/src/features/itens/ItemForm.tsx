@@ -1,15 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Check, Save } from 'lucide-react';
 import { createItem, updateItem, getItem, getLotes } from '../../lib/api';
 import { Item, Lote } from '../../types';
 import Button from '../../shared/components/Button';
-import Input from '../../shared/components/Input';
-import Select from '../../shared/components/Select';
 import LoadingSkeleton from '../../shared/components/LoadingSkeleton';
 import { useToast } from '../../contexts/ToastContext';
-import { SITUACOES, TAMANHOS, MARCAS, MODELOS, TIPOS_ITEM, CONDICOES } from '../../shared/utils/constants';
-import ImageUploader from '../../components/ImageUploader';
+import Step1Identificacao from './form-steps/Step1Identificacao';
+import Step2Caracteristicas from './form-steps/Step2Caracteristicas';
+import Step3Condicao from './form-steps/Step3Condicao';
+import Step4Valores from './form-steps/Step4Valores';
+import Step5Fotos from './form-steps/Step5Fotos';
+
+const STEPS = [
+  { number: 1, title: 'Identificação' },
+  { number: 2, title: 'Características' },
+  { number: 3, title: 'Condição' },
+  { number: 4, title: 'Valores' },
+  { number: 5, title: 'Fotos' },
+];
 
 export default function ItemForm() {
   const { id } = useParams();
@@ -19,7 +28,10 @@ export default function ItemForm() {
 
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const autoNome = useRef<string>('');
+
   const [formData, setFormData] = useState<Partial<Item>>({
     nome: '',
     tipo: '',
@@ -43,12 +55,43 @@ export default function ItemForm() {
     lote_id: undefined,
   });
 
+  // Auto-fill nome based on ano, jogador, numero
+  useEffect(() => {
+    const { ano, jogador, numero } = formData;
+    const hasAno = ano !== undefined && ano !== null && String(ano) !== '';
+    const hasJogador = Boolean(jogador && jogador.trim());
+    const hasNumero = numero !== undefined && numero !== null;
+
+    let generated = '';
+    if (hasAno && hasJogador && hasNumero) {
+      generated = `Camiseta ${ano} - ${jogador} #${numero}`;
+    } else if (hasAno && hasJogador) {
+      generated = `Camiseta ${ano} - ${jogador}`;
+    } else if (hasJogador && hasNumero) {
+      generated = `Camiseta - ${jogador} #${numero}`;
+    } else if (hasJogador) {
+      generated = `Camiseta - ${jogador}`;
+    } else if (hasAno) {
+      generated = `Camiseta ${ano}`;
+    }
+
+    if (!generated) return;
+
+    setFormData(prev => {
+      if (!prev.nome || prev.nome === autoNome.current) {
+        autoNome.current = generated;
+        return { ...prev, nome: generated };
+      }
+      return prev;
+    });
+  }, [formData.ano, formData.jogador, formData.numero]); // only watch these three fields for auto-fill
+
   useEffect(() => {
     loadLotes();
     if (isEditing && id) {
       loadItem(parseInt(id));
     }
-  }, [id, isEditing]);
+  }, [id, isEditing]); // loadLotes and loadItem are stable local functions
 
   const loadLotes = async () => {
     try {
@@ -90,9 +133,21 @@ export default function ItemForm() {
     setFormData(prev => ({ ...prev, [name]: newValue }));
   };
 
+  const handleNext = () => {
+    if (currentStep === 1 && !formData.nome) {
+      showError('Nome é obrigatório');
+      return;
+    }
+    setCurrentStep(s => Math.min(s + 1, STEPS.length));
+  };
+
+  const handlePrev = () => {
+    setCurrentStep(s => Math.max(s - 1, 1));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.nome) {
       showError('Nome é obrigatório');
       return;
@@ -100,7 +155,7 @@ export default function ItemForm() {
 
     try {
       setSaving(true);
-      
+
       const dataToSave = {
         ...formData,
         valor_compra: formData.valor_compra ?? 0,
@@ -114,7 +169,6 @@ export default function ItemForm() {
         const response = await createItem(dataToSave);
         const novoItemId = response.data.data.id;
         success('Item criado! Agora adicione fotos.');
-        // Redirect to edit page to allow adding images
         navigate(`/itens/${novoItemId}/editar`);
       }
     } catch (err: any) {
@@ -131,6 +185,7 @@ export default function ItemForm() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center space-x-4">
         <Button variant="ghost" onClick={() => navigate('/itens')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -141,242 +196,101 @@ export default function ItemForm() {
         </h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Info */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Informações Básicas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Nome *"
-              name="nome"
-              value={formData.nome || ''}
-              onChange={handleChange}
-              placeholder="Ex: Camisa Grêmio Home 2023"
-              required
-            />
-            <Select
-              label="Tipo"
-              name="tipo"
-              value={formData.tipo || ''}
-              onChange={handleChange}
-              options={TIPOS_ITEM.map(t => ({ value: t.value, label: t.label }))}
-            />
-            <Input
-              label="Ano"
-              name="ano"
-              type="number"
-              value={formData.ano || ''}
-              onChange={handleChange}
-              placeholder="2023"
-              min={1900}
-              max={2100}
-            />
-            <Select
-              label="Marca"
-              name="marca"
-              value={formData.marca || ''}
-              onChange={handleChange}
-              options={MARCAS.map(m => ({ value: m, label: m }))}
-            />
-            <Select
-              label="Modelo"
-              name="modelo"
-              value={formData.modelo || ''}
-              onChange={handleChange}
-              options={MODELOS.map(m => ({ value: m, label: m }))}
-            />
-            <Input
-              label="Cor Principal"
-              name="cor_principal"
-              value={formData.cor_principal || ''}
-              onChange={handleChange}
-              placeholder="Azul/Preto/Branco"
-            />
-          </div>
-        </div>
-
-        {/* Player/Number Info */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Jogador e Numeração</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Jogador"
-              name="jogador"
-              value={formData.jogador || ''}
-              onChange={handleChange}
-              placeholder="Nome do jogador"
-            />
-            <Input
-              label="Número"
-              name="numero"
-              type="number"
-              value={formData.numero || ''}
-              onChange={handleChange}
-              placeholder="10"
-              min={0}
-              max={99}
-            />
-            <Select
-              label="Tamanho"
-              name="tamanho"
-              value={formData.tamanho || ''}
-              onChange={handleChange}
-              options={TAMANHOS.map(t => ({ value: t, label: t }))}
-            />
-          </div>
-        </div>
-
-        {/* Condition Info */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Condição e Autógrafo</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Select
-              label="Condição"
-              name="condicao"
-              value={formData.condicao || ''}
-              onChange={handleChange}
-              options={CONDICOES.map(c => ({ value: c.value, label: c.label }))}
-            />
-            <div className="flex items-center space-x-4 pt-6">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="autografada"
-                  checked={formData.autografada || false}
-                  onChange={handleChange}
-                  className="w-4 h-4 rounded border-neutral-300 text-gremio-celeste focus:ring-gremio-celeste"
-                />
-                <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                  Autografada
+      {/* Stepper */}
+      <div className="card">
+        <div className="flex items-start justify-between">
+          {STEPS.map((step, index) => (
+            <React.Fragment key={step.number}>
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div
+                  className={[
+                    'w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors',
+                    currentStep === step.number
+                      ? 'bg-blue-600 text-white'
+                      : currentStep > step.number
+                      ? 'bg-green-500 text-white'
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400',
+                  ].join(' ')}
+                >
+                  {currentStep > step.number ? <Check className="w-5 h-5" /> : step.number}
+                </div>
+                <span className="text-xs mt-1 text-center w-16 text-neutral-600 dark:text-neutral-400">
+                  {step.title}
                 </span>
-              </label>
-            </div>
-            {formData.autografada && (
-              <Input
-                label="Descrição do Autógrafo"
-                name="autografo_descricao"
-                value={formData.autografo_descricao || ''}
-                onChange={handleChange}
-                placeholder="Ex: Autógrafo do Renato Portaluppi"
-              />
-            )}
-          </div>
+              </div>
+              {index < STEPS.length - 1 && (
+                <div
+                  className={[
+                    'flex-1 h-1 mt-5 mx-2 rounded transition-colors',
+                    currentStep > index + 1
+                      ? 'bg-green-500'
+                      : 'bg-neutral-200 dark:bg-neutral-700',
+                  ].join(' ')}
+                />
+              )}
+            </React.Fragment>
+          ))}
         </div>
+      </div>
 
-        {/* Values Info */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Valores</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Valor de Compra (R$)"
-              name="valor_compra"
-              type="number"
-              step="0.01"
-              value={formData.valor_compra || ''}
-              onChange={handleChange}
-              placeholder="0.00"
-            />
-            <Input
-              label="Valor de Venda (R$)"
-              name="valor_venda"
-              type="number"
-              step="0.01"
-              value={formData.valor_venda || ''}
-              onChange={handleChange}
-              placeholder="0.00"
-            />
-            <Input
-              label="Valor de Mercado (R$)"
-              name="valor_mercado"
-              type="number"
-              step="0.01"
-              value={formData.valor_mercado || ''}
-              onChange={handleChange}
-              placeholder="0.00"
-            />
-          </div>
-        </div>
+      {/* Step Content */}
+      <form onSubmit={handleSubmit}>
+        <div className="card min-h-64">
+          <h2 className="text-lg font-bold mb-6">
+            {STEPS[currentStep - 1].title}
+          </h2>
 
-        {/* Status Info */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Status e Origem</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Select
-              label="Situação"
-              name="situacao"
-              value={formData.situacao || 'estoque'}
-              onChange={handleChange}
-              options={SITUACOES.map(s => ({ value: s.value, label: s.label }))}
-            />
-            <Input
-              label="Destino"
-              name="destino"
-              value={formData.destino || ''}
-              onChange={handleChange}
-              placeholder="Ex: Venda, Coleção pessoal"
-            />
-            <Input
-              label="Data de Aquisição"
-              name="data_aquisicao"
-              type="date"
-              value={formData.data_aquisicao || ''}
-              onChange={handleChange}
-            />
-            <Select
-              label="Lote"
-              name="lote_id"
-              value={formData.lote_id || ''}
-              onChange={handleChange}
-              options={lotes.map(l => ({ value: l.id, label: l.nome }))}
-            />
-          </div>
-        </div>
-
-        {/* Observations */}
-        <div className="card">
-          <h2 className="text-lg font-bold mb-4">Observações</h2>
-          <textarea
-            name="observacoes"
-            value={formData.observacoes || ''}
-            onChange={handleChange}
-            placeholder="Informações adicionais sobre o item..."
-            rows={4}
-            className="w-full px-3 py-2 rounded-lg border transition-all duration-200
-              bg-white dark:bg-neutral-800
-              text-neutral-900 dark:text-neutral-50
-              placeholder:text-neutral-400 dark:placeholder:text-neutral-500
-              border-neutral-300 dark:border-neutral-600
-              focus:outline-none focus:ring-2 focus:ring-gremio-celeste-500/20 focus:border-gremio-celeste-500"
-          />
-        </div>
-
-        {/* Image Upload - Only available when editing */}
-        {isEditing && id && (
-          <div className="card">
-            <h2 className="text-lg font-bold mb-4">Imagens do Item</h2>
-            <ImageUploader
-              tipo="item"
-              itemId={parseInt(id, 10)}
-              maxFiles={5}
+          {currentStep === 1 && (
+            <Step1Identificacao formData={formData} onChange={handleChange} />
+          )}
+          {currentStep === 2 && (
+            <Step2Caracteristicas formData={formData} onChange={handleChange} />
+          )}
+          {currentStep === 3 && (
+            <Step3Condicao formData={formData} onChange={handleChange} />
+          )}
+          {currentStep === 4 && (
+            <Step4Valores formData={formData} onChange={handleChange} />
+          )}
+          {currentStep === 5 && (
+            <Step5Fotos
+              itemId={id ? parseInt(id, 10) : undefined}
+              isEditing={isEditing}
               onUploadComplete={(uploadedImages) => {
-                const message = uploadedImages.length === 1 
-                  ? '1 imagem enviada com sucesso!' 
-                  : `${uploadedImages.length} imagens enviadas com sucesso!`;
+                const message =
+                  uploadedImages.length === 1
+                    ? '1 imagem enviada com sucesso!'
+                    : `${uploadedImages.length} imagens enviadas com sucesso!`;
                 success(message);
               }}
             />
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Actions */}
-        <div className="flex justify-end space-x-4">
-          <Button variant="secondary" type="button" onClick={() => navigate('/itens')}>
-            Cancelar
-          </Button>
-          <Button type="submit" loading={saving}>
-            <Save className="w-4 h-4 mr-2" />
-            {isEditing ? 'Salvar Alterações' : 'Criar Item'}
-          </Button>
+        {/* Navigation */}
+        <div className="flex justify-between items-center mt-6">
+          <div>
+            {currentStep > 1 && (
+              <Button variant="secondary" type="button" onClick={handlePrev}>
+                ← Anterior
+              </Button>
+            )}
+          </div>
+          <div className="flex space-x-3">
+            <Button variant="secondary" type="button" onClick={() => navigate('/itens')}>
+              Cancelar
+            </Button>
+            {currentStep < STEPS.length ? (
+              <Button type="button" onClick={handleNext}>
+                Próximo →
+              </Button>
+            ) : (
+              <Button type="submit" loading={saving}>
+                <Save className="w-4 h-4 mr-2" />
+                {isEditing ? 'Salvar Alterações' : 'Criar Item'}
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>

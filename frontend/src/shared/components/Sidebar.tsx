@@ -17,7 +17,7 @@ import { clsx } from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/itens', icon: ShirtIcon, label: 'Camisetas' },
   { to: '/vendas', icon: ShoppingCart, label: 'Vendas' },
   { to: '/trocas', icon: RefreshCcw, label: 'Trocas' },
@@ -44,7 +44,7 @@ export default function Sidebar() {
         <NavLink
           key={to}
           to={to}
-          end={to === '/'}
+          end={to === '/dashboard'}
           className={({ isActive }) =>
             clsx(
               'flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200',
