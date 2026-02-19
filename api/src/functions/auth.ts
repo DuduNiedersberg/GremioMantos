@@ -55,7 +55,8 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
     
     let slugFinal = slugBase
     let sufixo = 1
-    while (true) {
+    const MAX_SLUG_ATTEMPTS = 100
+    while (sufixo <= MAX_SLUG_ATTEMPTS) {
       const slugCheck = await pool
         .request()
         .input('slug', sql.VarChar, slugFinal)
@@ -65,13 +66,10 @@ async function register(request: HttpRequest, context: InvocationContext): Promi
       slugFinal = `${slugBase}-${sufixo}`
     }
 
-    // Nome do tenant
-    const nomeTenant = data.nome_loja || data.nome
-
     // Criar tenant automaticamente
     const tenantResult = await pool
       .request()
-      .input('nome', sql.NVarChar, nomeTenant)
+      .input('nome', sql.NVarChar, nomeParaSlug)
       .input('slug', sql.VarChar, slugFinal)
       .query(`
         INSERT INTO tenants (nome, slug, ativo, vitrine_ativa, vitrine_titulo)
