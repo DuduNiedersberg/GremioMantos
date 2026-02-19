@@ -11,6 +11,7 @@ async function itemImagensHandler(request: HttpRequest, context: InvocationConte
     const method = request.method;
     const itemId = request.params.itemId;
     const imagemId = request.params.imagemId;
+    const action = request.params.action;
 
     if (!itemId) {
       return successResponse({ error: 'Item ID é obrigatório' }, 400, origin);
@@ -49,7 +50,7 @@ async function itemImagensHandler(request: HttpRequest, context: InvocationConte
     }
 
     // PATCH /api/itens/{itemId}/imagens/{imagemId}/principal - Set main image
-    if (method === 'PATCH' && imagemId && request.url.includes('/principal')) {
+    if (method === 'PATCH' && imagemId && action === 'principal') {
       // First, remove e_principal from all images of this item
       await executeQuery(
         'UPDATE imagens SET e_principal = 0 WHERE item_id = @item_id',
@@ -105,6 +106,6 @@ async function itemImagensHandlerWrapper(request: HttpRequest, context: Invocati
 app.http('item-imagens', {
   methods: ['GET', 'PATCH', 'DELETE', 'OPTIONS'],
   authLevel: 'anonymous',
-  route: 'itens/{itemId}/imagens/{imagemId?}/principal?',
+  route: 'itens/{itemId}/imagens/{imagemId?}/{action?}',
   handler: itemImagensHandlerWrapper,
 });
