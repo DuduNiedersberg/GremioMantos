@@ -44,6 +44,9 @@ export interface Item {
   imagem_principal_url?: string;
   imagem_principal_thumbnail?: string;
   imagens?: ImagemItem[];
+  publicado_vitrine?: boolean;
+  data_publicacao?: string;
+  ordem_vitrine?: number;
 }
 
 export interface Lote {

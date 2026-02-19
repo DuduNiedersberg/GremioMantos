@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, QrCode, Shirt, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getItem, deleteItem } from '../../lib/api';
+import { ArrowLeft, Edit, Trash2, QrCode, Shirt, X, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { getItem, deleteItem, publicarItemVitrine } from '../../lib/api';
 import { Item } from '../../types';
 import { formatCurrency, formatDate } from '../../shared/utils/formatters';
 import Button from '../../shared/components/Button';
@@ -19,6 +19,7 @@ export default function ItemDetails() {
   const [showQRCode, setShowQRCode] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [publicando, setPublicando] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -41,6 +42,21 @@ export default function ItemDetails() {
       navigate('/itens');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleVitrine = async () => {
+    if (!item) return;
+    try {
+      setPublicando(true);
+      const novoEstado = !item.publicado_vitrine;
+      await publicarItemVitrine(item.id, { publicado: novoEstado });
+      success(novoEstado ? 'Item publicado na vitrine!' : 'Item removido da vitrine');
+      setItem({ ...item, publicado_vitrine: novoEstado });
+    } catch (err: any) {
+      showError(err.response?.data?.error || 'Erro ao alterar vitrine');
+    } finally {
+      setPublicando(false);
     }
   };
 
@@ -116,6 +132,23 @@ export default function ItemDetails() {
           <Button variant="secondary" onClick={() => setShowQRCode(true)}>
             <QrCode className="w-4 h-4 mr-2" />
             QR Code
+          </Button>
+          <Button
+            variant={item.publicado_vitrine ? 'secondary' : 'primary'}
+            onClick={handleToggleVitrine}
+            loading={publicando}
+          >
+            {item.publicado_vitrine ? (
+              <>
+                <Eye className="w-4 h-4 mr-2 text-green-500" />
+                Na Vitrine
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-4 h-4 mr-2" />
+                Publicar na Vitrine
+              </>
+            )}
           </Button>
           <Link to={`/itens/${item.id}/editar`}>
             <Button variant="secondary">
@@ -349,6 +382,42 @@ export default function ItemDetails() {
           </p>
         </div>
       )}
+
+      {/* Vitrine Status */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold mb-1">Vitrine Pública</h2>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {item.publicado_vitrine
+                ? 'Este item está visível na sua vitrine pública.'
+                : 'Este item não está publicado na vitrine.'}
+            </p>
+            {item.data_publicacao && (
+              <p className="text-xs text-neutral-500 mt-1">
+                Publicado em: {formatDate(item.data_publicacao)}
+              </p>
+            )}
+          </div>
+          <Button
+            variant={item.publicado_vitrine ? 'secondary' : 'primary'}
+            onClick={handleToggleVitrine}
+            loading={publicando}
+          >
+            {item.publicado_vitrine ? (
+              <>
+                <EyeOff className="w-4 h-4 mr-2" />
+                Remover
+              </>
+            ) : (
+              <>
+                <Eye className="w-4 h-4 mr-2" />
+                Publicar
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
 
       {/* QR Code Modal */}
       {showQRCode && (

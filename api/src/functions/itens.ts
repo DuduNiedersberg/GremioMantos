@@ -51,6 +51,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
           i.autografada, i.autografo_descricao, i.valor_compra, i.valor_venda, 
           i.lucro_calculado, i.situacao, i.destino, i.data_aquisicao, i.data_saida, 
           i.observacoes, i.criado_em, i.atualizado_em, i.lote_id, i.valor_mercado,
+          i.publicado_vitrine, i.data_publicacao, i.ordem_vitrine,
           img.url_blob as imagem_principal_url,
           img.thumbnail_url as imagem_principal_thumbnail
         FROM itens i
@@ -94,6 +95,7 @@ async function itensHandler(request: HttpRequest, context: InvocationContext, us
           i.autografada, i.autografo_descricao, i.valor_compra, i.valor_venda, 
           i.lucro_calculado, i.situacao, i.destino, i.data_aquisicao, i.data_saida, 
           i.observacoes, i.criado_em, i.atualizado_em, i.lote_id, i.valor_mercado,
+          i.publicado_vitrine, i.data_publicacao, i.ordem_vitrine,
           img.url_blob as imagem_principal_url,
           img.thumbnail_url as imagem_principal_thumbnail
         FROM itens i
