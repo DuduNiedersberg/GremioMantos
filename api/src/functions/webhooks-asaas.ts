@@ -35,12 +35,17 @@ async function webhooksAsaasHandler(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
-  // 1. Validar token de autenticação
-  const token = request.headers.get('asaas-access-token')
+  // 1. Validar token — diferenciar missing (misconfiguration) vs invalid (unauthorized)
   const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN
 
-  if (!expectedToken || token !== expectedToken) {
-    context.warn('Webhook Asaas: token inválido ou ausente')
+  if (!expectedToken) {
+    context.error('Webhook Asaas: ASAAS_WEBHOOK_TOKEN não está configurado')
+    return { status: 500, jsonBody: { error: 'Erro interno do servidor' } }
+  }
+
+  const token = request.headers.get('asaas-access-token')
+  if (token !== expectedToken) {
+    context.warn('Webhook Asaas: token inválido')
     return { status: 401, jsonBody: { error: 'Não autorizado' } }
   }
 
@@ -58,20 +63,40 @@ async function webhooksAsaasHandler(
   const pool = await getConnection()
 
   // 3. Registrar log do webhook
+  // DB real: webhook_logs (id bigint, event, asaas_payment_id, asaas_transfer_id,
+  //          payload NVARCHAR(MAX), processed bit, error_message, idempotency_key,
+  //          received_at, processed_at)
+  const idempotencyKey = `${event}_${payload.payment?.id || payload.transfer?.id || 'unknown'}`
+
   let logId: number
   try {
-    const logResult = await pool.request()
-      .input('event', sql.VarChar, event)
-      .input('payment_id', sql.VarChar, payload.payment?.id || null)
-      .input('transfer_id', sql.VarChar, payload.transfer?.id || null)
-      .input('payload', sql.NVarChar, JSON.stringify(payload))
-      .input('status', sql.VarChar, 'recebido')
-      .query(`
-        INSERT INTO webhook_logs (event, payment_id, transfer_id, payload, status)
-        OUTPUT INSERTED.id
-        VALUES (@event, @payment_id, @transfer_id, @payload, @status)
-      `)
-    logId = logResult.recordset[0].id
+    // Check idempotency — skip if already processed
+    const existingLog = await pool.request()
+      .input('idempotency_key', sql.VarChar, idempotencyKey)
+      .query('SELECT id, processed FROM webhook_logs WHERE idempotency_key = @idempotency_key')
+
+    if (existingLog.recordset.length > 0 && existingLog.recordset[0].processed === true) {
+      context.log(`⏭️ Webhook já processado (idempotency): ${idempotencyKey}`)
+      return { status: 200, jsonBody: { received: true, duplicate: true } }
+    }
+
+    if (existingLog.recordset.length > 0) {
+      // Retry de um evento que falhou antes
+      logId = existingLog.recordset[0].id
+    } else {
+      const logResult = await pool.request()
+        .input('event', sql.VarChar, event)
+        .input('asaas_payment_id', sql.VarChar, payload.payment?.id || null)
+        .input('asaas_transfer_id', sql.VarChar, payload.transfer?.id || null)
+        .input('payload', sql.NVarChar(sql.MAX), JSON.stringify(payload))
+        .input('idempotency_key', sql.VarChar, idempotencyKey)
+        .query(`
+          INSERT INTO webhook_logs (event, asaas_payment_id, asaas_transfer_id, payload, idempotency_key)
+          OUTPUT INSERTED.id
+          VALUES (@event, @asaas_payment_id, @asaas_transfer_id, @payload, @idempotency_key)
+        `)
+      logId = Number(logResult.recordset[0].id)
+    }
   } catch (err: any) {
     context.error('Erro ao salvar webhook log:', err)
     return { status: 500, jsonBody: { error: 'Erro interno ao registrar webhook' } }
@@ -89,25 +114,27 @@ async function webhooksAsaasHandler(
 
     // Marcar log como processado
     await pool.request()
-      .input('id', sql.Int, logId)
-      .query("UPDATE webhook_logs SET status = 'processado' WHERE id = @id")
+      .input('id', sql.BigInt, logId)
+      .query('UPDATE webhook_logs SET processed = 1, processed_at = GETDATE() WHERE id = @id')
+
+    return { status: 200, jsonBody: { received: true } }
 
   } catch (err: any) {
     context.error(`Erro processando evento ${event}:`, err)
 
-    // Marcar log como erro
+    // Marcar log com erro
     await pool.request()
-      .input('id', sql.Int, logId)
-      .input('erro_msg', sql.NVarChar, (err.message || 'Erro desconhecido').substring(0, 500))
-      .query("UPDATE webhook_logs SET status = 'erro', erro_msg = @erro_msg WHERE id = @id")
-  }
+      .input('id', sql.BigInt, logId)
+      .input('error_message', sql.NVarChar, (err.message || 'Erro desconhecido').substring(0, 500))
+      .query('UPDATE webhook_logs SET error_message = @error_message WHERE id = @id')
 
-  // Sempre retorna 200 para o Asaas não reenviar (evento já foi logado)
-  return { status: 200, jsonBody: { received: true } }
+    // Retornar 500 para Asaas reenviar (falha transitória)
+    return { status: 500, jsonBody: { error: 'Erro ao processar evento' } }
+  }
 }
 
 // ============================================================================
-// Payment Events
+// Payment Events — COM transações SQL
 // ============================================================================
 
 async function handlePaymentEvent(
@@ -134,106 +161,151 @@ async function handlePaymentEvent(
     // ---- Pagamento confirmado/recebido ----
     case 'PAYMENT_CONFIRMED':
     case 'PAYMENT_RECEIVED': {
-      const novoStatus = event === 'PAYMENT_RECEIVED' ? 'recebido' : 'confirmado'
+      // pagamentos.status CHECK usa valores Asaas: CONFIRMED, RECEIVED, etc.
+      const asaasStatus = event === 'PAYMENT_RECEIVED' ? 'RECEIVED' : 'CONFIRMED'
+      const dataPagamento = payment.paymentDate || payment.confirmedDate || todayStr()
 
-      await pool.request()
-        .input('id', sql.Int, pag.id)
-        .input('status', sql.VarChar, novoStatus)
-        .input('valor_liquido', sql.Decimal(10, 2), payment.netValue || null)
-        .input('pago_em', sql.DateTime2, payment.paymentDate || payment.confirmedDate || new Date())
-        .query(`
-          UPDATE pagamentos
-          SET status = @status, valor_liquido = @valor_liquido, pago_em = @pago_em, atualizado_em = GETDATE()
-          WHERE id = @id
-        `)
+      const transaction = pool.transaction()
+      try {
+        await transaction.begin()
 
-      await pool.request()
-        .input('id', sql.Int, pag.pedido_id)
-        .input('pago_em', sql.DateTime2, payment.paymentDate || payment.confirmedDate || new Date())
-        .query(`
-          UPDATE pedidos
-          SET status = 'pago', pago_em = @pago_em, atualizado_em = GETDATE()
-          WHERE id = @id
-        `)
+        await transaction.request()
+          .input('id', sql.Int, pag.id)
+          .input('status', sql.VarChar, asaasStatus)
+          .input('valor_liquido', sql.Decimal(10, 2), payment.netValue || null)
+          .input('data_pagamento', sql.Date, dataPagamento)
+          .query(`
+            UPDATE pagamentos
+            SET status = @status, valor_liquido = @valor_liquido,
+                data_pagamento = @data_pagamento, atualizado_em = GETDATE()
+            WHERE id = @id
+          `)
 
-      // Itens reservados → vendida
-      await pool.request()
-        .input('pedido_id', sql.Int, pag.pedido_id)
-        .query(`
-          UPDATE itens SET situacao = 'vendida'
-          WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
-            AND situacao = 'reservada'
-        `)
+        // pedidos.status CHECK: pendente/pago/enviado/entregue/cancelado/estornado
+        await transaction.request()
+          .input('id', sql.Int, pag.pedido_id)
+          .input('pago_em', sql.DateTime2, new Date())
+          .query(`
+            UPDATE pedidos
+            SET status = 'pago', pago_em = @pago_em, atualizado_em = GETDATE()
+            WHERE id = @id
+          `)
 
-      context.log(`✅ Pagamento ${asaasPaymentId} ${novoStatus} — pedido ${pag.pedido_id}`)
+        // Itens reservados → vendida
+        await transaction.request()
+          .input('pedido_id', sql.Int, pag.pedido_id)
+          .query(`
+            UPDATE itens SET situacao = 'vendida'
+            WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
+              AND situacao = 'reservada'
+          `)
+
+        await transaction.commit()
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      }
+
+      context.log(`✅ Pagamento ${asaasPaymentId} ${asaasStatus} — pedido ${pag.pedido_id}`)
       break
     }
 
     // ---- Pagamento expirado ----
     case 'PAYMENT_OVERDUE': {
-      await pool.request()
-        .input('id', sql.Int, pag.id)
-        .query("UPDATE pagamentos SET status = 'expirado', atualizado_em = GETDATE() WHERE id = @id")
+      const transaction = pool.transaction()
+      try {
+        await transaction.begin()
 
-      await pool.request()
-        .input('id', sql.Int, pag.pedido_id)
-        .query("UPDATE pedidos SET status = 'expirado', atualizado_em = GETDATE() WHERE id = @id")
+        await transaction.request()
+          .input('id', sql.Int, pag.id)
+          .query("UPDATE pagamentos SET status = 'OVERDUE', atualizado_em = GETDATE() WHERE id = @id")
 
-      // Liberar reserva → estoque
-      await pool.request()
-        .input('pedido_id', sql.Int, pag.pedido_id)
-        .query(`
-          UPDATE itens SET situacao = 'estoque'
-          WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
-            AND situacao = 'reservada'
-        `)
+        // pedidos CHECK não tem 'expirado' → usar 'cancelado'
+        await transaction.request()
+          .input('id', sql.Int, pag.pedido_id)
+          .query("UPDATE pedidos SET status = 'cancelado', atualizado_em = GETDATE() WHERE id = @id")
 
-      context.log(`⏰ Pagamento ${asaasPaymentId} expirado — itens liberados`)
+        // Liberar reserva → estoque
+        await transaction.request()
+          .input('pedido_id', sql.Int, pag.pedido_id)
+          .query(`
+            UPDATE itens SET situacao = 'estoque'
+            WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
+              AND situacao = 'reservada'
+          `)
+
+        await transaction.commit()
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      }
+
+      context.log(`⏰ Pagamento ${asaasPaymentId} OVERDUE — itens liberados`)
       break
     }
 
     // ---- Pagamento estornado ----
     case 'PAYMENT_REFUNDED': {
-      await pool.request()
-        .input('id', sql.Int, pag.id)
-        .query("UPDATE pagamentos SET status = 'estornado', atualizado_em = GETDATE() WHERE id = @id")
+      const transaction = pool.transaction()
+      try {
+        await transaction.begin()
 
-      await pool.request()
-        .input('id', sql.Int, pag.pedido_id)
-        .query("UPDATE pedidos SET status = 'estornado', atualizado_em = GETDATE() WHERE id = @id")
+        await transaction.request()
+          .input('id', sql.Int, pag.id)
+          .query("UPDATE pagamentos SET status = 'REFUNDED', atualizado_em = GETDATE() WHERE id = @id")
 
-      // Itens vendidos voltam ao estoque
-      await pool.request()
-        .input('pedido_id', sql.Int, pag.pedido_id)
-        .query(`
-          UPDATE itens SET situacao = 'estoque'
-          WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
-            AND situacao = 'vendida'
-        `)
+        await transaction.request()
+          .input('id', sql.Int, pag.pedido_id)
+          .query("UPDATE pedidos SET status = 'estornado', atualizado_em = GETDATE() WHERE id = @id")
 
-      context.log(`↩️ Pagamento ${asaasPaymentId} estornado — itens devolvidos ao estoque`)
+        // Itens vendidos voltam ao estoque
+        await transaction.request()
+          .input('pedido_id', sql.Int, pag.pedido_id)
+          .query(`
+            UPDATE itens SET situacao = 'estoque'
+            WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
+              AND situacao = 'vendida'
+          `)
+
+        await transaction.commit()
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      }
+
+      context.log(`↩️ Pagamento ${asaasPaymentId} REFUNDED — itens devolvidos ao estoque`)
       break
     }
 
     // ---- Pagamento deletado/cancelado ----
     case 'PAYMENT_DELETED': {
-      await pool.request()
-        .input('id', sql.Int, pag.id)
-        .query("UPDATE pagamentos SET status = 'cancelado', atualizado_em = GETDATE() WHERE id = @id")
+      const transaction = pool.transaction()
+      try {
+        await transaction.begin()
 
-      await pool.request()
-        .input('id', sql.Int, pag.pedido_id)
-        .query("UPDATE pedidos SET status = 'cancelado', atualizado_em = GETDATE() WHERE id = @id")
+        await transaction.request()
+          .input('id', sql.Int, pag.id)
+          .query("UPDATE pagamentos SET status = 'REFUNDED', atualizado_em = GETDATE() WHERE id = @id")
 
-      await pool.request()
-        .input('pedido_id', sql.Int, pag.pedido_id)
-        .query(`
-          UPDATE itens SET situacao = 'estoque'
-          WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
-            AND situacao = 'reservada'
-        `)
+        await transaction.request()
+          .input('id', sql.Int, pag.pedido_id)
+          .query("UPDATE pedidos SET status = 'cancelado', atualizado_em = GETDATE() WHERE id = @id")
 
-      context.log(`🗑️ Pagamento ${asaasPaymentId} cancelado — itens liberados`)
+        await transaction.request()
+          .input('pedido_id', sql.Int, pag.pedido_id)
+          .query(`
+            UPDATE itens SET situacao = 'estoque'
+            WHERE id IN (SELECT item_id FROM pedido_itens WHERE pedido_id = @pedido_id)
+              AND situacao = 'reservada'
+          `)
+
+        await transaction.commit()
+      } catch (error) {
+        await transaction.rollback()
+        throw error
+      }
+
+      context.log(`🗑️ Pagamento ${asaasPaymentId} DELETED — itens liberados`)
       break
     }
 
@@ -243,7 +315,7 @@ async function handlePaymentEvent(
 }
 
 // ============================================================================
-// Transfer Events
+// Transfer Events — COM transações SQL
 // ============================================================================
 
 async function handleTransferEvent(
@@ -265,12 +337,13 @@ async function handleTransferEvent(
 
   const repasse = repResult.recordset[0]
 
+  // repasses.status CHECK: agendado/pendente/processando/pago/erro/cancelado
   switch (event) {
     case 'TRANSFER_DONE': {
       await pool.request()
         .input('id', sql.Int, repasse.id)
-        .query("UPDATE repasses SET status = 'concluido', transferido_em = GETDATE(), atualizado_em = GETDATE() WHERE id = @id")
-      context.log(`✅ Repasse ${asaasTransferId} concluído`)
+        .query("UPDATE repasses SET status = 'pago', data_repasse = GETDATE(), atualizado_em = GETDATE() WHERE id = @id")
+      context.log(`✅ Repasse ${asaasTransferId} concluído (status: pago)`)
       break
     }
 
@@ -288,14 +361,23 @@ async function handleTransferEvent(
     case 'TRANSFER_BLOCKED': {
       await pool.request()
         .input('id', sql.Int, repasse.id)
-        .query("UPDATE repasses SET status = 'falhou', atualizado_em = GETDATE() WHERE id = @id")
-      context.log(`❌ Repasse ${asaasTransferId} falhou: ${event}`)
+        .input('erro_mensagem', sql.NVarChar, `Evento: ${event}`)
+        .query("UPDATE repasses SET status = 'erro', erro_mensagem = @erro_mensagem, atualizado_em = GETDATE() WHERE id = @id")
+      context.log(`❌ Repasse ${asaasTransferId}: ${event}`)
       break
     }
 
     default:
       context.log(`ℹ️ Evento de transferência não tratado: ${event}`)
   }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function todayStr(): string {
+  return new Date().toISOString().split('T')[0]
 }
 
 // ============================================================================

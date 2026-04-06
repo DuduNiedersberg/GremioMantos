@@ -38,28 +38,28 @@ const checkoutSchema = z.object({
 
 /**
  * Garante que o comprador tem um customer no Asaas.
- * Cria se não existir, retorna o asaas_id.
+ * Cria se não existir, retorna o asaas_customer_id.
  */
 async function ensureAsaasCustomer(
   pool: sql.ConnectionPool,
   userId: number,
   nome: string,
-  cpf: string,
+  cpfCnpj: string,
   email: string
 ): Promise<string> {
   // Check local cache
   const existing = await pool.request()
     .input('usuario_id', sql.Int, userId)
-    .query('SELECT asaas_id FROM asaas_clientes WHERE usuario_id = @usuario_id')
+    .query('SELECT asaas_customer_id FROM asaas_clientes WHERE usuario_id = @usuario_id')
 
   if (existing.recordset.length > 0) {
-    return existing.recordset[0].asaas_id
+    return existing.recordset[0].asaas_customer_id
   }
 
   // Create in Asaas
   const res = await asaas.customers.create({
     name: nome,
-    cpfCnpj: cpf,
+    cpfCnpj: cpfCnpj,
     email,
     externalReference: String(userId),
   })
@@ -68,23 +68,34 @@ async function ensureAsaasCustomer(
     throw new Error(`Erro ao criar cliente Asaas: ${JSON.stringify(res.data)}`)
   }
 
-  const asaasId: string = res.data.id
+  const asaasCustomerId: string = res.data.id
 
-  // Persist locally
+  // Persist locally (asaas_clientes: usuario_id, asaas_customer_id)
   await pool.request()
     .input('usuario_id', sql.Int, userId)
-    .input('asaas_id', sql.VarChar, asaasId)
-    .input('cpf_cnpj', sql.VarChar, cpf)
+    .input('asaas_customer_id', sql.VarChar, asaasCustomerId)
     .query(`
-      INSERT INTO asaas_clientes (usuario_id, asaas_id, cpf_cnpj)
-      VALUES (@usuario_id, @asaas_id, @cpf_cnpj)
+      INSERT INTO asaas_clientes (usuario_id, asaas_customer_id)
+      VALUES (@usuario_id, @asaas_customer_id)
     `)
 
-  return asaasId
+  return asaasCustomerId
 }
 
 function todayISO(): string {
   return new Date().toISOString().split('T')[0]
+}
+
+/**
+ * Extrai o primeiro IP válido do header x-forwarded-for.
+ * Retorna undefined se não encontrar.
+ */
+function extractClientIp(request: HttpRequest): string | undefined {
+  const xff = request.headers.get('x-forwarded-for')
+  if (!xff) return undefined
+  const firstIp = xff.split(',')[0]?.trim()
+  if (!firstIp || firstIp === '0.0.0.0' || firstIp === '::1') return undefined
+  return firstIp
 }
 
 // ============================================================================
@@ -120,9 +131,10 @@ async function handlePostCheckout(
   const pool = await getConnection()
 
   // ---- 1. Validar CPF do comprador (D2) ----
+  // DB column: cpf_cnpj VARCHAR(14)
   const userResult = await pool.request()
     .input('id', sql.Int, user.userId)
-    .query('SELECT id, nome, email, cpf FROM usuarios WHERE id = @id')
+    .query('SELECT id, nome, email, cpf_cnpj FROM usuarios WHERE id = @id')
 
   if (userResult.recordset.length === 0) {
     return successResponse({ error: 'Usuário não encontrado' }, 404, origin)
@@ -130,7 +142,7 @@ async function handlePostCheckout(
 
   const buyer = userResult.recordset[0]
 
-  if (!buyer.cpf) {
+  if (!buyer.cpf_cnpj) {
     return successResponse(
       { error: 'CPF é obrigatório para realizar compras. Atualize seu perfil.' },
       422, origin
@@ -196,7 +208,7 @@ async function handlePostCheckout(
 
   // ---- 4. Garantir Asaas customer ----
   const asaasCustomerId = await ensureAsaasCustomer(
-    pool, user.userId, buyer.nome, buyer.cpf, buyer.email
+    pool, user.userId, buyer.nome, buyer.cpf_cnpj, buyer.email
   )
 
   // ---- 5. DB Transaction: criar pedidos + reservar itens ----
@@ -215,7 +227,7 @@ async function handlePostCheckout(
     for (const [tenantId, tenantItems] of groups) {
       const valorItens = tenantItems.reduce((sum: number, i: any) => sum + Number(i.valor_venda), 0)
 
-      // Criar pedido
+      // Criar pedido (status CHECK: pendente/pago/enviado/entregue/cancelado/estornado)
       const pedidoResult = await transaction.request()
         .input('tenant_id', sql.Int, tenantId)
         .input('comprador_id', sql.Int, user.userId)
@@ -232,23 +244,32 @@ async function handlePostCheckout(
 
       const pedidoId = pedidoResult.recordset[0].id
 
-      // Criar pedido_itens
+      // Criar pedido_itens (coluna real: valor_unitario)
       for (const item of tenantItems) {
         await transaction.request()
           .input('pedido_id', sql.Int, pedidoId)
           .input('item_id', sql.Int, item.id)
-          .input('preco_unitario', sql.Decimal(10, 2), item.valor_venda)
+          .input('valor_unitario', sql.Decimal(10, 2), item.valor_venda)
           .query(`
-            INSERT INTO pedido_itens (pedido_id, item_id, preco_unitario)
-            VALUES (@pedido_id, @item_id, @preco_unitario)
+            INSERT INTO pedido_itens (pedido_id, item_id, valor_unitario)
+            VALUES (@pedido_id, @item_id, @valor_unitario)
           `)
       }
 
-      // Reservar itens (D1 — timeout 30min via Asaas dueDate ou cron futuro)
+      // Reservar itens — COM proteção contra race condition
       for (const item of tenantItems) {
-        await transaction.request()
+        const reserveResult = await transaction.request()
           .input('id', sql.Int, item.id)
-          .query("UPDATE itens SET situacao = 'reservada' WHERE id = @id")
+          .query(`
+            UPDATE itens
+            SET situacao = 'reservada'
+            WHERE id = @id
+              AND situacao IN ('estoque', 'disponivel')
+          `)
+
+        if (reserveResult.rowsAffected[0] !== 1) {
+          throw new Error(`Item ${item.id} (${item.nome}) não está mais disponível para reserva`)
+        }
       }
 
       pedidos.push({
@@ -261,13 +282,18 @@ async function handlePostCheckout(
     }
 
     await transaction.commit()
-  } catch (err) {
+  } catch (err: any) {
     await transaction.rollback()
+    // Se foi race condition, retornar 409 Conflict
+    if (err.message?.includes('não está mais disponível')) {
+      return successResponse({ error: err.message }, 409, origin)
+    }
     throw err
   }
 
   // ---- 6. Criar pagamentos no Asaas (fora da DB transaction) ----
   const results: any[] = []
+  const dueDate = todayISO()
 
   for (const pedido of pedidos) {
     try {
@@ -275,7 +301,7 @@ async function handlePostCheckout(
         customer: asaasCustomerId,
         billingType: forma_pagamento,
         value: pedido.valor_itens,
-        dueDate: todayISO(),
+        dueDate,
         description: `Pedido #${pedido.id} — ${pedido.tenant_nome}`,
         externalReference: String(pedido.id),
       }
@@ -283,15 +309,20 @@ async function handlePostCheckout(
       if (forma_pagamento === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) {
         paymentInput.creditCard = creditCard
         paymentInput.creditCardHolderInfo = creditCardHolderInfo
-        paymentInput.remoteIp = request.headers.get('x-forwarded-for') || '0.0.0.0'
+        // Extrair primeiro IP válido do x-forwarded-for
+        const clientIp = extractClientIp(request)
+        if (clientIp) {
+          paymentInput.remoteIp = clientIp
+        }
       }
 
       const paymentRes = await asaas.payments.create(paymentInput)
 
       if (!paymentRes.ok) {
+        // Marcar pedido como cancelado (CHECK: pendente/pago/enviado/entregue/cancelado/estornado)
         await pool.request()
           .input('id', sql.Int, pedido.id)
-          .query("UPDATE pedidos SET status = 'erro_pagamento' WHERE id = @id")
+          .query("UPDATE pedidos SET status = 'cancelado' WHERE id = @id")
 
         // Liberar itens reservados
         await pool.request()
@@ -314,27 +345,43 @@ async function handlePostCheckout(
       const payment = paymentRes.data
 
       // PIX → obter QR code
-      let dadosPix: any = null
+      let pixQrcodeUrl: string | null = null
+      let pixCopiaCola: string | null = null
       if (forma_pagamento === 'PIX') {
         const pixRes = await asaas.payments.getPixQrCode(payment.id)
         if (pixRes.ok) {
-          dadosPix = pixRes.data
+          pixQrcodeUrl = pixRes.data.encodedImage || null
+          pixCopiaCola = pixRes.data.payload || null
         }
       }
 
       // Salvar pagamento no DB
+      // Colunas reais: billing_type, data_vencimento (NOT NULL), pix_qrcode_url, pix_copia_cola
+      // Status CHECK usa valores Asaas (PENDING, CONFIRMED, RECEIVED, etc.)
       await pool.request()
         .input('pedido_id', sql.Int, pedido.id)
         .input('tenant_id', sql.Int, pedido.tenant_id)
         .input('asaas_payment_id', sql.VarChar, payment.id)
         .input('asaas_customer_id', sql.VarChar, asaasCustomerId)
-        .input('tipo', sql.VarChar, forma_pagamento)
+        .input('billing_type', sql.VarChar, forma_pagamento)
         .input('valor', sql.Decimal(10, 2), pedido.valor_itens)
         .input('status', sql.VarChar, payment.status || 'PENDING')
-        .input('dados_pix', sql.NVarChar, dadosPix ? JSON.stringify(dadosPix) : null)
+        .input('data_vencimento', sql.Date, dueDate)
+        .input('pix_qrcode_url', sql.VarChar, pixQrcodeUrl)
+        .input('pix_copia_cola', sql.VarChar, pixCopiaCola)
+        .input('external_reference', sql.VarChar, String(pedido.id))
+        .input('descricao', sql.NVarChar, `Pedido #${pedido.id} — ${pedido.tenant_nome}`)
         .query(`
-          INSERT INTO pagamentos (pedido_id, tenant_id, asaas_payment_id, asaas_customer_id, tipo, valor, status, dados_pix)
-          VALUES (@pedido_id, @tenant_id, @asaas_payment_id, @asaas_customer_id, @tipo, @valor, @status, @dados_pix)
+          INSERT INTO pagamentos (
+            pedido_id, tenant_id, asaas_payment_id, asaas_customer_id,
+            billing_type, valor, status, data_vencimento,
+            pix_qrcode_url, pix_copia_cola, external_reference, descricao
+          )
+          VALUES (
+            @pedido_id, @tenant_id, @asaas_payment_id, @asaas_customer_id,
+            @billing_type, @valor, @status, @data_vencimento,
+            @pix_qrcode_url, @pix_copia_cola, @external_reference, @descricao
+          )
         `)
 
       results.push({
@@ -346,11 +393,11 @@ async function handlePostCheckout(
           asaas_id: payment.id,
           status: payment.status,
           billing_type: forma_pagamento,
-          ...(forma_pagamento === 'PIX' && dadosPix ? {
+          ...(forma_pagamento === 'PIX' && pixCopiaCola ? {
             pix: {
-              qr_code_base64: dadosPix.encodedImage,
-              copia_cola: dadosPix.payload,
-              expiration_date: dadosPix.expirationDate,
+              qr_code_base64: pixQrcodeUrl,
+              copia_cola: pixCopiaCola,
+              expiration_date: payment.dueDate,
             },
           } : {}),
           ...(forma_pagamento === 'CREDIT_CARD' ? {
@@ -363,7 +410,7 @@ async function handlePostCheckout(
 
       await pool.request()
         .input('id', sql.Int, pedido.id)
-        .query("UPDATE pedidos SET status = 'erro_pagamento' WHERE id = @id")
+        .query("UPDATE pedidos SET status = 'cancelado' WHERE id = @id")
 
       await pool.request()
         .input('pedido_id', sql.Int, pedido.id)
@@ -401,19 +448,26 @@ async function handleGetCheckout(
   pedidoId: string,
   origin?: string
 ): Promise<HttpResponseInit> {
+  // Validar pedidoId
+  const id = parseInt(pedidoId)
+  if (isNaN(id) || id <= 0) {
+    return successResponse({ error: 'ID do pedido inválido' }, 400, origin)
+  }
+
   const pool = await getConnection()
 
   const result = await pool.request()
-    .input('id', sql.Int, parseInt(pedidoId))
+    .input('id', sql.Int, id)
     .input('comprador_id', sql.Int, user.userId)
     .query(`
       SELECT p.id, p.tenant_id, p.comprador_id, p.status, p.valor_itens,
              p.valor_frete, p.valor_total, p.forma_pagamento, p.pago_em,
              p.endereco_id, p.codigo_rastreio, p.transportadora,
              p.enviado_em, p.entregue_em, p.criado_em,
-             pg.asaas_payment_id, pg.tipo AS pagamento_tipo,
+             pg.asaas_payment_id, pg.billing_type AS pagamento_tipo,
              pg.valor AS pagamento_valor, pg.status AS pagamento_status,
-             pg.dados_pix, pg.pago_em AS pagamento_pago_em
+             pg.pix_qrcode_url, pg.pix_copia_cola,
+             pg.data_pagamento AS pagamento_pago_em
       FROM pedidos p
       LEFT JOIN pagamentos pg ON pg.pedido_id = p.id
       WHERE p.id = @id AND p.comprador_id = @comprador_id
@@ -425,11 +479,11 @@ async function handleGetCheckout(
 
   const pedido = result.recordset[0]
 
-  // Buscar itens do pedido
+  // Buscar itens do pedido (coluna real: valor_unitario)
   const itensResult = await pool.request()
-    .input('pedido_id', sql.Int, parseInt(pedidoId))
+    .input('pedido_id', sql.Int, id)
     .query(`
-      SELECT pi.item_id, pi.preco_unitario, i.nome, i.marca, i.tamanho, i.situacao,
+      SELECT pi.item_id, pi.valor_unitario, i.nome, i.marca, i.tamanho, i.situacao,
              (SELECT TOP 1 url_blob FROM imagens WHERE item_id = pi.item_id AND e_principal = 1) AS imagem
       FROM pedido_itens pi
       INNER JOIN itens i ON pi.item_id = i.id
@@ -437,10 +491,7 @@ async function handleGetCheckout(
     `)
 
   return successResponse({
-    pedido: {
-      ...pedido,
-      dados_pix: pedido.dados_pix ? JSON.parse(pedido.dados_pix) : null,
-    },
+    pedido,
     itens: itensResult.recordset,
   }, 200, origin)
 }
