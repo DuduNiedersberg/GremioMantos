@@ -27,4 +27,6 @@ import './functions/upload';
 import './functions/item-imagens';
 import './functions/vitrine-publica';
 import './functions/vitrine-admin';
+import './functions/checkout';
+import './functions/webhooks-asaas';
 
